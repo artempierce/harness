@@ -608,6 +608,40 @@ Each layer runs end to end before the next begins.
 
 ---
 
+## Prior art
+
+Two systems built the architecture this project is working toward. Neither is
+read while building — the point is to arrive at the design, then diff against
+people who got there first.
+
+**[waku-agent](https://github.com/ShenSeanChen/waku-agent)** — the diagram this
+project is built from. Python, SQLite, local-first, ~95-line loop, three memory
+stores with a retrieval gate, evals with LLM-as-judge, and a browser dashboard.
+Closest to layers 1–12.
+
+**[Hermes Agent](https://hermes-agent.nousresearch.com/)** (Nous Research, MIT)
+— the same shape at product scale: persistent memory that auto-generates skills,
+isolated subagents with their own conversations and terminals, gateways for
+Telegram/Discord/Slack/WhatsApp/Signal/email, desktop app and CLI, 200+ models.
+
+Hermes matters most for the question this design leaves open. It runs tool
+execution across **five sandbox backends — local, Docker, SSH, Singularity,
+Modal, with container hardening and namespace isolation.** That is the answer to
+"where does `run_command` actually run," and it is worth reading when layer 13
+arrives rather than inventing a worse version.
+
+Two places this design deliberately differs:
+
+- **Skills are generated automatically there; here they pass a gate.** Auto-
+  generation is the better product decision and the worse learning one — the
+  itemized proposal exists so the privilege grant inside a persona is a thing
+  you see.
+- **Self-modification here reaches code, not just skills.** Layers 13–15 are
+  about the system proposing changes to its own Python through a pull request,
+  which is a different and more dangerous thing than writing a new skill file.
+
+---
+
 ## Open questions
 
 - **Switching vs routing.** Layer 7 gives manual switching, which is predictable.

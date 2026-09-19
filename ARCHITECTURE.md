@@ -93,7 +93,9 @@ Guardrails:
 | Tool allowlist per persona | The tutor calling `run_command` |
 | Path boundary | Tools reading outside the project, or reading `.env` |
 | Confirmation gate | Any write the user hasn't seen first |
-| Guarded paths | The system editing its own guardrails (see Self-extension) |
+| Guarded set (allowlist) | The system editing its own guardrails (see Self-extension) |
+| Allowlist subset rule | Delegating to a persona with more privilege than the caller |
+| Per-turn cost ceiling | A pipeline fan-out with no dollar bound |
 
 ### Tools
 
@@ -251,152 +253,225 @@ It cannot apply them. Every path from "good idea" to "running code" passes
 through a human, and the checks that enforce that are written in Python, not in
 a prompt.
 
-This is the most dangerous thing in the architecture and the reason the rest of
-it is shaped the way it is.
+This is the most dangerous thing in the architecture. The design below has been
+adversarially reviewed once; the notes marked **⚠** are holes that review found
+in an earlier version, kept visible because they are the instructive part.
 
-### Three tiers of extension
+### The extension point
 
-Not all changes carry the same risk, and treating them identically means either
-paranoid friction on the safe ones or dangerous ease on the rest.
-
-| Tier | What it is | Applied by | Restart? |
-|---|---|---|---|
-| **Data** | A new persona — a `PERSONA.md` with instructions and a tool allowlist | Confirmation in chat, then written to disk | No — loaded per turn |
-| **Code** | A new tool — Python, a schema, and eval cases | A reviewed pull request | Yes |
-| **Core** | The loop, the guardrails, the gates themselves | A human writes it | Yes |
-
-The tiers exist so that the common case — "I want a persona that helps me prep
-for interviews" — stays a thirty-second conversation, while "add a tool that
-runs shell commands" takes the long route through review.
-
-**Core is not merely gated. It is off-limits.** No agent-driven path reaches it.
-
-### The guarded core
-
-An agent that can write tools can write a tool that removes its own restrictions.
-It does not need to intend this; a plausible-sounding instruction is enough, and
-the failure is silent — a weakened check looks exactly like a working one.
-
-So the rule is:
-
-> A guardrail must live somewhere the thing it constrains cannot reach.
-
-In practice, `write_file` refuses a fixed list of paths regardless of who asks,
-what the persona's instructions say, or how the request is phrased:
+A self-extending system needs somewhere to extend *into*. That place must be
+separate from the place that enforces the rules, or the two requirements
+collide: tools have to be registered, but the registry is exactly what an agent
+must not edit.
 
 ```
-GUARDED = [
-    "ninja/tools.py",      # the allowlist and the path boundary
-    "ninja/agent.py",      # the loop and its step cap
-    "ninja/guard.py",      # this list
-    "pyproject.toml",      # entry points and dependencies
-    ".github/",            # branch protection, CI
-]
+ninja/registry.py     guarded — scans and loads. Never written by an agent.
+ninja/tools/          the extension point. One file per tool.
+  read_file.py        each exports SCHEMA and run()
+  calendar.py         ← a new capability is a new file here
+personas/             the extension point for personas. One directory each.
+evals/cases/          eval cases, as YAML data
 ```
 
-`guard.py` guards itself. That is not clever; it is the minimum. A guard list
-the agent can edit is decoration.
+Nothing is wired by hand. `registry.py` scans both directories at startup and
+builds the schema list and the dispatcher. Adding a capability is adding a file.
 
-Three properties make this hold:
+> **⚠ The hole this replaces.** The first version put `SCHEMAS` and `run()` in a
+> single guarded `tools.py`. A new tool was an entry in that list and a branch in
+> that dispatcher — so the pipeline could not produce a complete tool without
+> editing a file it was forbidden to touch. A self-extension design with no
+> extension point. Either the human hand-wires every result, or the guard comes
+> off the file that enforces the path boundary.
 
-1. **It's a check, not an instruction.** Prompt-level restrictions are requests.
-   This is an `if` statement that raises.
-2. **It's enforced at the tool, not the persona.** A persona's allowlist decides
-   *which* tools it may use; the tool decides what it will do for anyone.
-3. **Git is the outer layer.** The builder works on a branch and cannot push to
-   `main`. Branch protection on GitHub is enforced by GitHub, not by anything
-   running on this laptop.
+Note what this trades: **dropping a file into `ninja/tools/` is arbitrary code
+execution at next startup.** That is accepted deliberately, and it is why that
+directory is code tier — PR required, no exceptions — rather than a convenience.
 
-Changing what's guarded is a human editing a file and committing it. There is no
-chat command for it, deliberately.
+### The guarded set is an allowlist
+
+```python
+# Everything under these is guarded.
+GUARDED_ROOTS  = ["ninja/", "sql/", ".github/", ".git/", "pyproject.toml", "uv.lock"]
+# Except these, which are the extension points.
+WRITABLE       = ["ninja/tools/", "personas/", "evals/cases/"]
+```
+
+> **⚠** The first version was a denylist naming five specific files. Denylists
+> fail open, and this one would have rotted on a schedule: when the depth cap
+> moves out of `agent.py` into `delegate.py` at layer 8, a list naming
+> `agent.py` silently stops covering it — and a weakened check looks exactly
+> like a working one. Every layer from 3 to 12 adds a file the old list did not
+> know to name.
+
+Two related traps, both in the current code:
+
+- `ROOT = Path(__file__).resolve().parent.parent` is the repo under an editable
+  install and `site-packages` under a normal one — where the "project boundary"
+  becomes every installed package, and `sitecustomize.py` is code execution at
+  next start. The boundary must be anchored explicitly, not derived from
+  `__file__`.
+- `.venv` is inside `ROOT` and protected only incidentally, by the rule that
+  refuses dotfiles. Rename it `venv/` and that protection silently vanishes.
+
+### What the guard cannot do
+
+**`run_command` defeats all of the above.** The guard is an `if` inside
+`write_file`; a shell is a different function. `python -c`, `sed -i`, `tee`,
+`>`, `git checkout origin/x -- ninja/agent.py` — a process that can spawn a
+shell cannot be path-restricted. This is not a gap to patch; it is the shape of
+the problem.
+
+So the real boundary for anything holding `run_command` is OS-level — a
+separate user, a container, or a read-only bind mount over `ninja/` — and until
+that exists, the honest statement is that the coder persona is trusted, and the
+pull request is the only thing standing between it and `main`.
+
+Likewise **evals must be data, not Python.** A tester that can write
+`evals/conftest.py` can set `guard.GUARDED = []` in a file pytest imports before
+any test, in the same interpreter that later imports the guard. Monkeypatching
+in `conftest` is ordinary practice, not an exploit. Cases are YAML; the runner
+is guarded.
+
+### Three tiers, cut by privilege
+
+The tiers are not about file type. A markdown file and a Python file can grant
+identical power. What separates them is whether the change **grants**, **uses**,
+or **enforces** privilege.
+
+| Tier | What it is | Gate |
+|---|---|---|
+| **Instructions** | Persona prose. `tools:` unchanged, or a subset of an already-approved set | Confirmation in chat |
+| **Privilege** | Any new or widened `tools:` list, any `model:` change, any new tool | Reviewed pull request |
+| **Enforcement** | The loop, the caps, the registry, the guard, the path boundary | A human writes it |
+
+> **⚠** The first version cut by artifact type and called personas low-risk
+> because "allowlists are enforced by the harness." But the harness reads the
+> allowlist *from the file the agent just wrote*. `tools:` in frontmatter is a
+> capability grant. Under that model, asking for an interview-prep persona could
+> hand out shell access through a thirty-second chat confirmation — with honest
+> reasoning, an approving skim, and no malice anywhere in the chain.
+
+Two rules fall out, and both are enforced in `registry.py`:
+
+1. **Delegation de-escalates.** A child's tool list must be a subset of its
+   parent's. Without this, an orchestrator holding `read_file` and `delegate`
+   can reach `run_command` through a persona — privilege escalation as a
+   documented feature.
+2. **The tool universe is bounded by a human.** The union of every persona's
+   allowlist cannot exceed a set defined in a guarded file. Personas select from
+   that set; they never extend it.
+
+`model:` is a cost grant, not a style choice. And `description:` is text the
+orchestrator reads when routing — so if web results ever reach `episodes`, get
+consolidated into `facts`, and land in working memory, that is a path from a web
+page to routing behaviour. Worth knowing before `search_web` exists.
 
 ### The build pipeline
-
-A capability request becomes a pull request by passing through several personas,
-each with narrow tool access. Ninja orchestrates; it does not build.
 
 ```
   you: "ninja, could you learn to read my calendar?"
         │
         ▼
   ┌──────────────┐
-  │  ARCHITECT   │  reads the repo. Writes no code.
-  │              │  Produces a spec: what it touches, what could
-  │              │  break, what "done" means.
+  │  ARCHITECT   │  reads the repo, writes a spec, writes no code
   └──────────────┘
         │
-        ▼
-     ── HUMAN GATE 1 ──  you read the spec and approve the shape
+     ── HUMAN GATE 1 ──  approve the shape, before tokens are spent
         │
         ▼
   ┌──────────────┐
-  │    CODER     │  works on a branch, in a worktree.
-  │              │  write_file is guarded. Cannot touch main.
+  │    CODER     │◄──────────┐  branch + worktree. Holds run_command,
+  │              │           │  and is therefore the security perimeter.
+  └──────────────┘           │
+        │                    │ evals fail → back, max 3 rounds
+        ▼                    │
+  ┌──────────────┐           │
+  │   TESTER     │───────────┘  writes evals/cases/*.yaml FIRST.
+  │              │              Cannot write ninja/.
   └──────────────┘
-        │
+        │  red-then-green verified by git, not by trust
         ▼
   ┌──────────────┐
-  │   TESTER     │  writes eval cases FIRST, then runs them.
-  │              │  Cannot edit the implementation — only evals/.
+  │    CRITIC    │  reads only the diff, fresh context.
+  │              │  A rejection BLOCKS — it is a gate, not a comment.
   └──────────────┘
         │
+     ── HUMAN GATE 2 ──  a pull request: spec, diff, eval results, critique,
+        │                cost and latency deltas
         ▼
-  ┌──────────────┐
-  │    CRITIC    │  reads only the diff. Fresh context, no memory
-  │              │  of the conversation that produced it.
-  └──────────────┘
-        │
-        ▼
-     ── HUMAN GATE 2 ──  a real pull request, with the spec, the
-        │                diff, the eval results and the critique
-        ▼
-     you merge. you restart. the capability exists.
+     merge → restart → the capability exists
 ```
 
-Each arrow is a `delegate` call. The pipeline is layer 8's machinery pointed at
-the repo — there is no new orchestration engine, and if delegation works, this
-mostly works.
+Every arrow is a `delegate` call. This is layer 8's machinery pointed at the
+repo, not a new engine.
+
+**Red-then-green, mechanically.** "Eval cases written before the implementation"
+is a prompt-level claim in a document that correctly says prompt-level
+restrictions are requests. It is cheaply checkable instead: the eval commit must
+be an ancestor of the implementation commit, and CI checks out that ancestor and
+asserts the new cases **fail** there. Verified by git. Without it — and given
+the tester also authors the expectations a model-judge grades against — the
+whole test story is circular.
+
+**The pipeline is a state machine, not a line.** A `proposals` table holds one
+row per request with a status: `spec` → `approved` → `building` → `testing` →
+`review` → `pr` → `merged` / `abandoned`. Without it, an API error or a step cap
+halfway through leaves a branch, a worktree, and a spec that existed only in a
+discarded working memory. With it, the pipeline is resumable, visible in the
+dashboard, and the conflict story is free: **one open proposal at a time.**
+
+**A cost ceiling, checked before each call.** `MAX_STEPS` and `MAX_DEPTH` bound
+shape, not spend. Four personas, a loop each, up to three rounds, and no dollar
+cap — while the trace records cost only *after* it was spent. The pipeline needs
+a budget that aborts, not a report that explains.
 
 ### Why the roles are split
 
-Four personas rather than one agent doing all four, for reasons that are about
-evidence rather than tidiness:
+- **The architect writes no code**, so the spec is rejectable cheaply — the gate
+  that catches "you asked for the wrong thing."
+- **The critic sees only the diff**, with no memory of the reasoning that made a
+  bad idea sound good an hour ago. Highest value per token in the pipeline.
+- **The tester cannot write `ninja/`.** What protects you is the write scope, not
+  the personality — an agent that can edit both an implementation and its test
+  will make them agree. Keeping it a separate call also means it gets its own
+  step budget.
+- **The coder is the perimeter**, because it is the only role that needs
+  `run_command`.
 
-- **The architect writes no code**, so the spec is a real artifact you can reject
-  cheaply — before any tokens are spent building the wrong thing.
-- **The tester cannot edit the implementation.** An agent that can change both
-  the code and the test will make them agree, and the passing suite means
-  nothing. Separating them is the entire value of the gate.
-- **The critic sees only the diff.** Fresh context, no attachment to the plan
-  that produced it, no memory of the reasoning that made a bad idea sound
-  reasonable an hour ago.
-- **Ninja orchestrates but does not build**, so the conversation stays readable
-  while the work happens in traces you can open.
+Three of the four do work the others cannot. A leaner version — reviewer and
+coder, with evals locked — would be defensible; four is kept because exercising
+delegation is the point. But the thing actually worth building here is the state
+machine around them, not the personas.
 
-### What "tested" has to mean
+### What rollback does not cover
 
-A capability is not accepted because it ran once in a chat. The pull request must
-carry:
+`git revert` reverts code. It does not revert effects. A merged tool that wrote
+rows to `facts`, migrated a table, or touched the filesystem leaves all of that
+behind, and `sql/` has no migration story yet. Decide whether the database is
+versioned before the first tool writes to it.
 
-- **eval cases written before the implementation**, in `evals/`, that fail
-  without the change and pass with it
-- **the existing suite still passing** — layer 11's regression check, because a
-  new tool changes what the model sees on every turn, and the failure usually
-  shows up somewhere else
-- **a trace of the capability working**, linked from the PR
-- **cost and latency deltas**, because a new tool in the schema costs input
-  tokens on every single request whether it's called or not
+And a restart discards the conversation that asked for the capability. "You
+merge, you restart, the capability exists" is true, and it also ends the session
+that motivated it.
 
-That last one is the non-obvious tax on self-extension: tools are not free when
-idle. A system that can add tools forever will slow itself down and never say so.
+### The gate that erodes
+
+The most likely failure in this whole design is not a clever escape. It is
+**approval fatigue**: the confirmation gate works on turn 1 through 20, and on
+turn 40 the diffs are being skimmed and approved. A gate that fires constantly
+stops being a gate.
+
+So gate 2 should be rare and high-information — a real pull request, with
+everything needed to judge it in one place — rather than a stream of small
+confirmations that train the habit of saying yes.
 
 ### What this is not
 
-It is not autonomy. Nothing merges without a human, and nothing reaches the core
-at all. The reason to build it this way is not safety theatre — it is that a
-system which proposes changes as specs, diffs, tests and critiques is a system
-whose reasoning you can inspect. An agent that quietly edits itself is one you
-have to trust; this one you can read.
+It is not autonomy. Nothing merges without a human and nothing reaches
+enforcement at all. The reason to build it this way is not safety theatre — a
+system that proposes changes as specs, diffs, failing-then-passing tests and
+critiques is a system whose reasoning you can inspect. An agent that quietly
+edits itself is one you have to trust; this one you can read.
 
 ---
 
@@ -463,9 +538,12 @@ Each layer runs end to end before the next begins.
 12. `ninja_lc/` on LangGraph, traces to LangSmith, the two compared
 
 **Phase 6 — self-extension**
-13. Tool authoring: the builder writes code, on a branch, with tests
-14. The build pipeline: architect → coder → tester → critic → pull request
-15. The guarded core: what the system may never change, enforced in code
+13. The registry and the guarded set: an extension point, and an allowlist
+    around it — built before anything can extend
+14. Tool authoring: a new tool is a new file in `ninja/tools/`, on a branch,
+    with YAML eval cases and red-then-green verified by git
+15. The build pipeline: architect → coder → tester → critic, as a resumable
+    state machine with a `proposals` table, back edges and a cost ceiling
 
 ---
 
@@ -482,6 +560,12 @@ Each layer runs end to end before the next begins.
   new subsystem. The app is the easy half — the work is an authenticated HTTP API
   in front of the loop and deciding what runs on the laptop versus a server.
   Not scheduled.
+- **Where `run_command` actually runs.** The guard cannot restrict a shell, so
+  the coder persona is trusted until it runs somewhere isolated — a container, a
+  separate user, or a read-only mount over `ninja/`. Unresolved, and it bounds
+  how much of the pipeline can run unattended.
+- **Whether `sql/` is versioned.** `git revert` does not undo a migration or the
+  rows a merged tool wrote. Needs deciding before the first tool writes.
 - **Who writes the decision log.** Ninja writing its own entries is the point,
   but an agent narrating its reasoning is not the same as reporting it. Whether
   entries should be generated in the turn or reconstructed from the trace

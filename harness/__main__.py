@@ -6,6 +6,11 @@ Everything lives in one Python list that dies when the process does.
 """
 
 import anthropic
+from dotenv import load_dotenv
+
+# Reads .env into the environment. .env is gitignored; the key never
+# touches the repo.
+load_dotenv()
 
 # Cheapest current model, per the cost rule. Swap to "claude-opus-5" when you
 # want the good one.

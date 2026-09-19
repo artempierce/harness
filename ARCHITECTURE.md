@@ -249,13 +249,66 @@ The dashboard is not a ninth subsystem. Every panel is an existing layer, render
 ## Self-extension
 
 Ninja can propose changes to itself: new tools, new personas, new capabilities.
-It cannot apply them. Every path from "good idea" to "running code" passes
-through a human, and the checks that enforce that are written in Python, not in
-a prompt.
+It cannot apply them.
 
-This is the most dangerous thing in the architecture. The design below has been
-adversarially reviewed once; the notes marked **⚠** are holes that review found
-in an earlier version, kept visible because they are the instructive part.
+This arrives in **two stages, years apart in risk**, and the split is the most
+important structural decision in the document. Thinking about improving yourself
+and being able to modify yourself are different capabilities, and collapsing
+them is how this goes wrong.
+
+The design below has been adversarially reviewed once; notes marked **⚠** are
+holes that review found in an earlier version, kept visible because they are the
+instructive part.
+
+### Stage 1 — proposals without power (layer 9)
+
+An **architect** persona whose tool allowlist contains `read_file`,
+`list_files`, and nothing else. It reads the repo, understands the system, and
+writes a proposal. It cannot write a file, run a command, open a branch, or
+delegate to anything that can. Neither can anything else — at this stage no
+persona in the system holds a write tool at all.
+
+The proposal is the itemized list described below. You read it. If you want it
+built, you take it to **a separate Claude session, outside Ninja**, and
+implement it by hand.
+
+That sounds like a limitation. It is the strongest isolation in the whole
+architecture, and it costs nothing:
+
+> **The human carrying a proposal from Ninja to an implementer is an air gap.**
+> No automated path crosses it. No guard list, no sandbox, no branch protection
+> is needed, because there is no mechanism to protect — the system that proposes
+> and the system that writes share nothing but a person reading text.
+
+It also buys the evidence that stage 2 depends on. Run this for a few months and
+you find out whether Ninja's proposals are any good. If they are consistently
+vague, over-scoped, or wrong, you have learned that for free and never built the
+dangerous part. **Earn the pipeline by proving the proposals are worth
+implementing.**
+
+One real risk, worth naming because it is easy to miss: a proposal is text
+written by a model, and pasting it into a privileged agent makes it instructions
+reaching something that can act. Treat a proposal as **data to evaluate**, not
+as a prompt to run — paste it under "here is a proposal, assess it," read it
+yourself first, and never pipe it anywhere automatically.
+
+### Stage 2 — the pipeline (layers 13–15)
+
+Later, the same architect persona gains one thing: the ability to `delegate` to
+implementer personas that *do* hold write access, inside the guarded, gated,
+sandboxed machinery described in the rest of this section.
+
+Note what changes and what doesn't. The architect's `PERSONA.md` barely moves —
+its instructions were always "propose well." What changes is the system around
+it: a registry, a guarded set, implementers, a state machine, a cost ceiling.
+**The persona is data; the privilege belongs to the system.** That is the whole
+design in one sentence.
+
+And note what is being traded. Stage 2 exists to remove the air gap, and the
+only thing it buys is convenience — no human retyping, no context lost between
+two systems. Everything below is the price of that convenience. It should be
+paid deliberately, when the proposals have proven worth automating, and not
+before.
 
 ### The extension point
 
@@ -589,7 +642,9 @@ Each layer runs end to end before the next begins.
 **Phase 3 — the cast**
 7. Personas: procedural memory, tool allowlists, manual switching
 8. Delegation: `delegate` as a tool, depth limits, context isolation
-9. Persona authoring, behind the confirmation gate
+9. The architect: proposes tools and personas, holds no write tool, and
+   nothing else in the system does either. Implementation is by hand,
+   outside Ninja, across an air gap
 
 **Phase 4 — the system**
 10. Consolidation
@@ -603,8 +658,9 @@ Each layer runs end to end before the next begins.
     around it — built before anything can extend
 14. Tool authoring: a new tool is a new file in `ninja/tools/`, on a branch,
     with YAML eval cases and red-then-green verified by git
-15. The build pipeline: architect → coder → tester → critic, as a resumable
-    state machine with a `proposals` table, back edges and a cost ceiling
+15. The build pipeline: the architect gains implementers — coder, tester,
+    critic — as a resumable state machine with a `proposals` table, back
+    edges and a cost ceiling. The air gap closes; this is the trade
 
 ---
 

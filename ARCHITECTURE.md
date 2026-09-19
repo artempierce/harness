@@ -1,6 +1,6 @@
 # Architecture
 
-A personal assistant that is a cast of agents rather than one.
+**Ninja** — a personal assistant that is a cast of agents rather than one.
 
 This document describes what the system is meant to become. It is written ahead of
 the code on purpose — the project is being built layer by layer to learn how an
@@ -68,7 +68,8 @@ next turn. That is the single most important sentence in this document.
 
 ### Gateway
 
-How a message gets in. The terminal REPL today; the web chat panel later. A gateway
+How a message gets in. `ninja` in the terminal today; `ninja dashboard` and the
+web chat panel later. A gateway
 does one job: turn an incoming message into a turn, and a reply into whatever the
 channel needs. No logic lives here.
 
@@ -232,7 +233,7 @@ The dashboard is not a ninth subsystem. Every panel is an existing layer, render
 
 ## Data
 
-One SQLite file, `.harness/state.db`:
+One SQLite file, `.ninja/state.db`:
 
 | Table | Holds |
 |---|---|
@@ -247,8 +248,11 @@ One SQLite file, `.harness/state.db`:
 ## Repo layout
 
 ```
-harness/          raw Python — the version you can read
-harness_lc/       the LangGraph port — same layers, framework version
+ninja/            raw Python — the version you can read
+  cli.py          the `ninja` command
+  agent.py        the loop
+  tools.py        what the model may call
+ninja_lc/         the LangGraph port — same layers, framework version
 personas/         PERSONA.md per persona
 sql/              schema, shared by both
 evals/            test cases, shared by both
@@ -256,7 +260,7 @@ ui/               the dashboard
 ARCHITECTURE.md   this file
 ```
 
-`harness/` and `harness_lc/` implement the same system twice — once by hand, once
+`ninja/` and `ninja_lc/` implement the same system twice — once by hand, once
 with LangChain/LangGraph/LangSmith. They share the database, the personas, and the
 eval suite, so the same tests can run against both and the traces compared. The
 raw version is never deleted; it is the reference for what the framework is doing.
@@ -287,7 +291,7 @@ Each layer runs end to end before the next begins.
 11. Eval, diagnose, release
 
 **Phase 5 — the port**
-12. `harness_lc/` on LangGraph, traces to LangSmith, the two compared
+12. `ninja_lc/` on LangGraph, traces to LangSmith, the two compared
 
 ---
 

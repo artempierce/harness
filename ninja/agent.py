@@ -1,4 +1,4 @@
-"""Layer 2: the loop.
+"""Ninja's agent loop.
 
 user prompt -> LLM -> tool call -> result -> LLM -> ... -> reply
 
@@ -10,7 +10,7 @@ guardrail stops us.
 import anthropic
 from dotenv import load_dotenv
 
-from harness import tools
+from ninja import tools
 
 # Reads .env into the environment. .env is gitignored; the key never
 # touches the repo.
@@ -78,7 +78,7 @@ def main() -> None:
     # Still the working memory from layer 1 — it just fills up faster now.
     messages = []
 
-    print(f"harness layer 2 | model={MODEL} | ctrl-d to quit\n")
+    print(f"ninja | model={MODEL} | ctrl-d to quit\n")
 
     while True:
         try:
@@ -94,7 +94,3 @@ def main() -> None:
 
         print(f"\nagent> {reply}")
         print(f"[working memory: {len(messages)} messages]\n")
-
-
-if __name__ == "__main__":
-    main()

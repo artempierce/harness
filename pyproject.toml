@@ -1,10 +1,18 @@
 [project]
-name = "harness"
+name = "ninja-agent"
 version = "0.1.0"
-description = "An agent harness, built layer by layer, to learn how one works."
+description = "Ninja — a personal assistant that is a cast of agents, built one layer at a time."
 requires-python = ">=3.11"
 dependencies = ["anthropic>=1.0", "python-dotenv>=1.0"]
+
+[project.scripts]
+ninja = "ninja.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# The distribution is "ninja-agent" (pip install ninja-agent) but the package
+# you import is "ninja". Hatchling can't guess that, so point it at the dir.
+[tool.hatch.build.targets.wheel]
+packages = ["ninja"]

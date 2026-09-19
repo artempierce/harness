@@ -454,6 +454,67 @@ And a restart discards the conversation that asked for the capability. "You
 merge, you restart, the capability exists" is true, and it also ends the session
 that motivated it.
 
+### Gates are itemized, not binary
+
+A gate that asks "approve this whole thing, yes or no?" is a bad gate twice
+over. It forces all-or-nothing on a proposal where you object to one line, and
+when you say no it hands the agent no information about *which* line.
+
+So a proposal is **a list of decisions**, and each one is accepted, declined, or
+changed independently:
+
+```
+PROPOSAL #7 · "could you read my calendar?"
+────────────────────────────────────────────────────────────
+ 1 ▸ New tool  calendar_read                  [accept] decline change
+     Reads events from a local .ics export. No network, no write.
+
+ 2 ▸ Grant     calendar_read → assistant      [accept] decline change
+     Orchestrator only. Not available to delegates.
+
+ 3 ▸ Dependency  icalendar (PyPI)              accept [decline] change
+     ~40kb, no transitive deps.
+     ⚠ new supply-chain surface, and it parses untrusted input
+
+ 4 ▸ Tests     6 cases in evals/cases/calendar/  [accept] decline change
+     malformed .ics · empty calendar · timezone boundary
+
+ 5 ▸ Cost      +180 input tokens on every turn  accept decline [change]
+     The schema sits in context whether the tool is called or not.
+────────────────────────────────────────────────────────────
+A declined or changed item needs a reason. The reason becomes the brief
+for the next round, and an entry in the decision log.
+```
+
+Three properties matter:
+
+**Declining is instructive.** "Don't add the dependency — parse the .ics by
+hand, it's one format" is a far better next brief than "no." The reason you give
+is the input to round two, which is why it is required rather than optional.
+
+**Every item is a real decision.** Padding the list with tasks rather than
+choices is how this becomes fatigue. "Write the function" is not an item. A
+dependency, a privilege grant, a permanent token cost, and a test plan are.
+
+**Cost is an item.** A tool's schema is in context on every turn whether it is
+ever called or not, so every accepted capability is a permanent tax on every
+future request. Making that a line you approve rather than a number you discover
+later is the whole reason it's listed.
+
+### When a delegation needs a gate
+
+Not every sub-agent call should stop and ask — gating a research question makes
+the system unusable, and a gate that fires constantly is the one that erodes.
+The subset rule already makes privilege *escalation* impossible, so the gate is
+about effects, not authority:
+
+| The sub-agent will… | Gate |
+|---|---|
+| Only read and reason | None. Traced, visible in the dashboard, not interrupted |
+| Write anything | Writes land on a branch; the gate is the proposal |
+| Spend past the turn budget | Stops and asks, with the spend so far |
+| Reach outside — network, calendar, messages | Asks, every time, naming what it will touch |
+
 ### The gate that erodes
 
 The most likely failure in this whole design is not a clever escape. It is

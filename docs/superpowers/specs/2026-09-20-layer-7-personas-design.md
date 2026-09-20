@@ -52,23 +52,29 @@ One directory per persona, matching `ARCHITECTURE.md`:
 
 ```
 personas/
-  assistant/       PERSONA.md
-  codebase-guide/  PERSONA.md
-  archivist/       PERSONA.md
+  assistant/         PERSONA.md
+  interview-coach/   PERSONA.md
 ```
 
 ```markdown
 ---
-name: codebase-guide
-description: Use for questions about how this project works — structure, where
-  something lives, what a file does. Cannot store facts.
-tools: [list_files, read_file]
+name: interview-coach
+description: Use to rehearse for a QA or automation interview — practice
+  questions, follow-ups on weak answers, and tracking what to revise. Not for
+  looking things up.
+tools: [read_file, remember]
 model: claude-haiku-4-5
 ---
 
-## How to answer
+## How to coach
 
-Read before you answer...
+Ask, then wait. One question at a time, and a follow-up on the part of the
+answer that was thin rather than the part that was strong.
+
+Do not hand over the answer. If they are stuck, narrow the question until they
+can reach it themselves.
+
+When a gap shows up twice, `remember` it — the weakness, not the exchange.
 ```
 
 Frontmatter is parsed with `yaml.safe_load` — `pyyaml` becomes the fifth runtime
@@ -235,13 +241,18 @@ values, and layer 12's port needs the same constants.
 
 ## Cockpit
 
-The reserved `Personas` nav item becomes real, and `/api/system` stops returning
-`personas: []`.
+The reserved `Personas` nav item becomes real.
 
+- `GET /api/personas` is the panel's source, matching the shape every other
+  panel already uses (`/api/tools`, `/api/guardrails`, `/api/facts`). It returns
+  the cast plus which one is active.
+- `POST /api/persona` sets the default for subsequent requests.
+- The `personas: []` stub in `/api/system` is removed rather than populated in
+  parallel — two sources for one fact is how a panel drifts from the harness.
 - A card per persona: name, description, model, and the tools it may call —
-  read from the file, so the panel cannot drift from what the harness enforces.
+  read from the file, so the panel cannot claim a capability the allowlist
+  does not grant.
 - A switcher; the active persona shows in the chat header.
-- Every panel reads the running system. This one is no exception.
 
 ## Testing
 

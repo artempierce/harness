@@ -101,32 +101,56 @@ def run_turn(
     return f"[stopped: hit the {MAX_STEPS}-step guardrail]"
 
 
+def switch(command: str, current: Persona) -> Persona:
+    """Handle a /persona line. Returns the persona for the next turn.
+
+    Working memory is untouched: the persona lives in the system prompt, which
+    is rebuilt every turn, so swapping hats costs nothing in the transcript.
+    """
+    _, _, name = command.partition(" ")
+    name = name.strip()
+    if not name:
+        print("  personas:")
+        for p in personas.all():
+            mark = "*" if p.name == current.name else " "
+            print(f"   {mark} {p.name:16} {len(p.tools)} tools · {p.description}")
+        return current
+    try:
+        chosen = personas.load(name)
+    except ValueError as exc:
+        print(f"  {exc}")
+        return current
+    print(f"  ↳ persona: {chosen.name} ({len(chosen.tools)} tools)")
+    return chosen
+
+
 def main() -> None:
     client = anthropic.Anthropic()
     session = episodic.new_session()
-
-    # Working memory no longer starts empty: layer 4 puts recent turns back
-    # before the first round. This is the pattern every memory layer follows —
-    # something decides what goes into the array before the loop runs.
     messages = episodic.recall()
+    persona = personas.load(personas.DEFAULT)
 
-    print(f"ninja | model={MODEL} | ctrl-d to quit")
+    print(f"ninja | {persona.name} | model={persona.model} | ctrl-d to quit")
     if messages:
         print(f"remembering {len(messages)} earlier messages")
     print()
 
     while True:
         try:
-            user_input = input("you> ").strip()
+            user_input = input(f"{persona.name}> ").strip()
         except EOFError:
             print()
             break
         if not user_input:
             continue
+        if user_input.startswith("/persona"):
+            persona = switch(user_input, persona)
+            continue
 
         messages.append({"role": "user", "content": user_input})
         trace = Trace(user_input)
-        reply = run_turn(client, messages, trace, build_system(user_input, trace))
+        reply = run_turn(client, messages, trace, persona,
+                         build_system(user_input, trace, persona))
         trace_id = trace.finish(reply)
 
         episodic.save(session, "user", user_input, trace_id)

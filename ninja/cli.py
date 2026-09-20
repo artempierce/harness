@@ -4,6 +4,8 @@
     ninja trace        the last 10 turns
     ninja trace 7      one turn, step by step
     ninja dashboard    the browser cockpit (layer 6)
+
+In the REPL: /persona lists the cast, /persona <name> switches.
 """
 
 import argparse

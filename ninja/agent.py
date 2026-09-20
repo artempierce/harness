@@ -7,10 +7,13 @@ hand the result back, and ask again — until it stops asking, or until the
 guardrail stops us.
 """
 
+import time
+
 import anthropic
 from dotenv import load_dotenv
 
 from ninja import tools
+from ninja.trace import Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
 # touches the repo.
@@ -30,9 +33,14 @@ SYSTEM = (
 MAX_STEPS = 6
 
 
-def run_turn(client: anthropic.Anthropic, messages: list) -> str:
+def ms_since(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+def run_turn(client: anthropic.Anthropic, messages: list, trace: Trace) -> str:
     """Loop until the model stops asking for tools. Returns its final text."""
     for _ in range(MAX_STEPS):
+        started = time.perf_counter()
         response = client.messages.create(
             model=MODEL,
             max_tokens=2048,
@@ -40,6 +48,7 @@ def run_turn(client: anthropic.Anthropic, messages: list) -> str:
             tools=tools.SCHEMAS,
             messages=messages,
         )
+        trace.model(MODEL, response, ms_since(started))
         # Append the blocks, not the text — the tool_use blocks have to go back
         # so the model can see its own request alongside our result.
         messages.append({"role": "assistant", "content": response.content})
@@ -52,10 +61,12 @@ def run_turn(client: anthropic.Anthropic, messages: list) -> str:
             if block.type != "tool_use":
                 continue
             print(f"  ↳ {block.name}({block.input})")
+            started = time.perf_counter()
             try:
                 output, failed = tools.run(block.name, block.input), False
             except Exception as exc:
                 output, failed = str(exc), True
+            trace.tool(block.name, block.input, not failed, output, ms_since(started))
             results.append(
                 {
                     "type": "tool_result",
@@ -90,7 +101,13 @@ def main() -> None:
             continue
 
         messages.append({"role": "user", "content": user_input})
-        reply = run_turn(client, messages)
+        trace = Trace(user_input)
+        reply = run_turn(client, messages, trace)
+        trace_id = trace.finish(reply)
 
         print(f"\nagent> {reply}")
-        print(f"[working memory: {len(messages)} messages]\n")
+        print(
+            f"[trace {trace_id} · {len(messages)} messages · "
+            f"{trace.input_tokens} in / {trace.output_tokens} out · "
+            f"${trace.cost:.5f}]\n"
+        )

@@ -43,7 +43,8 @@ def test_query_survives_punctuation():
 
 
 def test_remember_tool_stores_a_fact():
-    out = tools.run("remember", {"fact": "Sol prefers concise explanations"})
+    out = tools.run("remember", {"fact": "Sol prefers concise explanations"},
+                    [s["name"] for s in tools.SCHEMAS])
     assert "remembered" in out
     assert semantic.count() == 1
     assert "concise" in semantic.all_facts()[0]["content"]

@@ -5,6 +5,9 @@ import pytest
 
 from ninja import tools
 
+# Every tool. Tests that are not about the allowlist pass this.
+ALL = tuple(s["name"] for s in tools.SCHEMAS)
+
 
 def test_schemas_are_well_formed():
     for schema in tools.SCHEMAS:
@@ -16,9 +19,9 @@ def test_schemas_are_well_formed():
 
 
 def test_list_and_read_work():
-    listing = tools.run("list_files", {"path": "."})
+    listing = tools.run("list_files", {"path": "."}, ALL)
     assert "pyproject.toml" in listing
-    assert "[project]" in tools.run("read_file", {"path": "pyproject.toml"})
+    assert "[project]" in tools.run("read_file", {"path": "pyproject.toml"}, ALL)
 
 
 def test_hidden_files_are_refused():
@@ -26,19 +29,30 @@ def test_hidden_files_are_refused():
     # and gets sent to the API on the next turn.
     for path in [".env", ".git/config", "ninja/../.env"]:
         with pytest.raises(ValueError, match="hidden files"):
-            tools.run("read_file", {"path": path})
+            tools.run("read_file", {"path": path}, ALL)
 
 
 def test_listing_hides_dotfiles():
-    assert ".env" not in tools.run("list_files", {"path": "."}).split("\n")
+    assert ".env" not in tools.run("list_files", {"path": "."}, ALL).split("\n")
 
 
 def test_path_escape_is_refused():
     for path in ["../../../etc/passwd", "/etc/passwd", "ninja/../../.."]:
         with pytest.raises(ValueError):
-            tools.run("read_file", {"path": path})
+            tools.run("read_file", {"path": path}, ALL)
 
 
 def test_unknown_tool_raises():
     with pytest.raises(ValueError, match="unknown tool"):
-        tools.run("rm_rf", {"path": "/"})
+        tools.run("rm_rf", {"path": "/"}, ALL)
+
+
+def test_a_tool_outside_the_allowlist_is_refused():
+    # The second enforcement point. The first is that the model was never
+    # shown this tool; this catches the name it guessed anyway.
+    with pytest.raises(ValueError, match="allowlist"):
+        tools.run("remember", {"fact": "x"}, allowed=["read_file"])
+
+
+def test_an_allowed_tool_still_runs():
+    assert "pyproject.toml" in tools.run("list_files", {"path": "."}, allowed=ALL)

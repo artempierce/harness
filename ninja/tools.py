@@ -4,6 +4,7 @@ SCHEMAS is what the model sees — it picks a tool by reading these descriptions
 run() is what actually happens. The model never executes anything itself.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from ninja import semantic
@@ -73,8 +74,11 @@ def _resolve(path: str) -> Path:
     return target
 
 
-def run(name: str, args: dict) -> str:
+def run(name: str, args: dict, allowed: Sequence[str]) -> str:
+    # Check for unknown tools first, then verify the allowlist.
     if name == "list_files":
+        if name not in allowed:
+            raise ValueError(f"{name} is not in this persona's allowlist")
         entries = _resolve(args["path"]).iterdir()
         return "\n".join(
             sorted(
@@ -84,8 +88,12 @@ def run(name: str, args: dict) -> str:
             )
         )
     if name == "read_file":
+        if name not in allowed:
+            raise ValueError(f"{name} is not in this persona's allowlist")
         return _resolve(args["path"]).read_text()
     if name == "remember":
+        if name not in allowed:
+            raise ValueError(f"{name} is not in this persona's allowlist")
         semantic.remember(args["fact"])
         return f"remembered: {args['fact']}"
     raise ValueError(f"unknown tool: {name}")

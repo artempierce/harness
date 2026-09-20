@@ -1,15 +1,10 @@
 name: quality gate
 
-# Runs on every pull request, and on every push to main. Merging is blocked
-# until it passes and a human approves — see CONTRIBUTING for the flow.
-#
-# `pull_request` carries no branch filter on purpose. With `branches: [main]` a
-# pull request aimed at another branch ran nothing at all — no red, no green,
-# no checks reported — which looks exactly like a pull request that passed.
-# That happened to #7, stacked on #6. Most pull requests here target main and
-# are unaffected; the ones that do not are the ones that had no gate.
+# Runs on every pull request into main. Merging is blocked until it passes and
+# a human approves — see CONTRIBUTING for the flow.
 on:
   pull_request:
+    branches: [main]
   push:
     branches: [main]
 

@@ -110,8 +110,16 @@ def switch(command: str, current: Persona) -> Persona:
     _, _, name = command.partition(" ")
     name = name.strip()
     if not name:
+        # One unreadable PERSONA.md must not end the session. Listing the cast
+        # reads every file, and an uncaught load error here would take the REPL
+        # down with the transcript still in it.
+        try:
+            cast = personas.all()
+        except ValueError as exc:
+            print(f"  {exc}")
+            return current
         print("  personas:")
-        for p in personas.all():
+        for p in cast:
             mark = "*" if p.name == current.name else " "
             print(f"   {mark} {p.name:16} {len(p.tools)} tools · {p.description}")
         return current

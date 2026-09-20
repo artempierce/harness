@@ -53,3 +53,16 @@ def test_a_persona_command_never_becomes_a_user_turn(monkeypatch, capsys):
     assert stub.seen == []
     out = capsys.readouterr().out
     assert "interview-coach" in out
+
+
+def test_one_broken_persona_file_does_not_end_the_session(tmp_path, monkeypatch, capsys):
+    # Listing the cast reads every file on disk. An uncaught load error here
+    # would take the REPL down mid-conversation, transcript and all.
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "PERSONA.md").write_text("no frontmatter here\n")
+    started = personas.load("assistant")
+
+    assert agent.switch("/persona", started) is started
+    assert "frontmatter" in capsys.readouterr().out

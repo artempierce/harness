@@ -205,6 +205,14 @@ SCAFFOLD = set()
 
 @app.get("/api/personas")
 def personas_panel():
+    # A load error here is a broken file on disk, not a broken request. Raising
+    # it as an HTTPException keeps the file and the reason in the response body;
+    # letting it escape would reach the browser as a bare 500 and the panel
+    # would say only that something went wrong.
+    try:
+        cast = personas.all()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
         "active": active,
         "personas": [
@@ -217,7 +225,7 @@ def personas_panel():
                 # the allowlist does not grant.
                 "tools": list(p.tools),
             }
-            for p in personas.all()
+            for p in cast
         ],
     }
 

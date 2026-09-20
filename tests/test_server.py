@@ -125,3 +125,19 @@ def test_a_chat_request_can_name_its_persona(monkeypatch):
 def test_system_panel_no_longer_carries_a_personas_stub():
     # One source for one fact. /api/personas is the panel's source.
     assert "personas" not in client.get("/api/system").json()
+
+
+def test_a_broken_persona_file_is_reported_with_its_reason(monkeypatch, tmp_path):
+    # An uncaught load error reaches the browser as a bare 500, and the panel
+    # can only say that something went wrong. The file and the reason have to
+    # survive into the body.
+    from ninja import personas
+
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    broken = tmp_path / "broken"
+    broken.mkdir()
+    (broken / "PERSONA.md").write_text("---\nname: broken\n---\n\nbody\n")
+
+    reply = client.get("/api/personas")
+    assert reply.status_code == 500
+    assert "broken" in reply.json()["detail"]

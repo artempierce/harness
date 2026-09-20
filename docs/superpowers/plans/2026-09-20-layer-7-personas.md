@@ -353,6 +353,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `ninja/tools.py` (`run`)
 - Modify: `tests/test_tools.py` (6 existing call sites)
+- Modify: `tests/test_semantic.py:46` (a seventh call site, easy to miss —
+  it is in the semantic tests because `remember` is the tool that writes a fact)
 
 **Interfaces:**
 - Consumes: nothing from Task 1 — `tools.py` must not import `personas`
@@ -450,16 +452,29 @@ Note `test_unknown_tool_raises` passes `ALL`, so it still reaches the
 `unknown tool` branch rather than being caught by the allowlist first. That
 distinction is the point of the test — keep it.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Update the seventh call site, in `tests/test_semantic.py`**
 
-Run: `uv run pytest tests/test_tools.py -q`
-Expected: PASS, 8 tests.
+`remember` is a tool, so the semantic tests call `tools.run` too. Line 46:
+
+```python
+def test_remember_tool_stores_a_fact():
+    out = tools.run("remember", {"fact": "Sol prefers concise explanations"},
+                    [s["name"] for s in tools.SCHEMAS])
+    assert "remembered" in out
+    assert semantic.count() == 1
+    assert "concise" in semantic.all_facts()[0]["content"]
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_tools.py tests/test_semantic.py -q`
+Expected: PASS, 16 tests.
 
 `tests/test_loop.py` will now fail — `agent.run_turn` still calls
 `tools.run(block.name, block.input)` with two arguments. That is expected and
 Task 3 fixes it. Do not patch `agent.py` here.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add ninja/tools.py tests/test_tools.py
@@ -491,6 +506,8 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Modify: `ninja/agent.py` (`build_system`, `run_turn`, `MODEL`, `SYSTEM`)
 - Modify: `tests/conftest.py` (add `a_persona`)
 - Modify: `tests/test_loop.py` (every `run_turn` call)
+- Modify: `tests/test_semantic.py:56,66` (two `build_system` calls — the gate
+  tests assert on the prompt it returns, so they call it directly)
 
 **Interfaces:**
 - Consumes: `personas.Persona`, `personas.DEFAULT_MODEL`,
@@ -673,15 +690,48 @@ and the dispatch line:
 
 Leave everything else in the loop unchanged.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [ ] **Step 6: Update the two `build_system` calls in `tests/test_semantic.py`**
 
-Run: `uv run pytest tests/test_loop.py tests/test_tools.py -q`
+These assert that a retrieved fact reaches the prompt, so they call
+`build_system` directly. Both gain a persona. Add `a_persona` to the imports at
+the top of the file (`from .conftest import a_persona`), then:
+
+```python
+def test_retrieved_facts_reach_the_system_prompt():
+    from ninja import agent, trace
+    facts("Sol is building an agent harness called Ninja")
+    turn = trace.Trace("x")
+    prompt = agent.build_system("what am I building?", turn, a_persona())
+    assert "Ninja" in prompt
+    assert turn.events[0]["type"] == "gate"
+    assert turn.events[0]["retrieve"] is True
+
+
+def test_a_skip_is_recorded_as_a_decision():
+    from ninja import agent, trace
+    facts("Sol is building an agent harness called Ninja")
+    turn = trace.Trace("x")
+    prompt = agent.build_system("what is 2 + 2?", turn, a_persona())
+    assert "Ninja" not in prompt
+    # A skip must be visible in the trace — an absence would be invisible.
+    assert turn.events[0]["retrieve"] is False
+    assert turn.events[0]["why"]
+```
+
+The assertions are unchanged. `a_persona()`'s instructions are
+`"You are a test persona."`, which contains neither `"Ninja"` nor `"2"`, so
+neither assertion can pass by accident on the instructions rather than the
+retrieved fact.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+Run: `uv run pytest tests/test_loop.py tests/test_tools.py tests/test_semantic.py -q`
 Expected: PASS.
 
 `tests/test_server.py` now fails — `server.chat` still calls `run_turn` without
 a persona. Task 5 fixes it.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add ninja/agent.py tests/conftest.py tests/test_loop.py

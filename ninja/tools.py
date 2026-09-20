@@ -6,6 +6,8 @@ run() is what actually happens. The model never executes anything itself.
 
 from pathlib import Path
 
+from ninja import semantic
+
 # The model chooses the path, so the path needs a boundary.
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -38,6 +40,25 @@ SCHEMAS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "remember",
+        "description": (
+            "Store a durable fact about the user or their work, so it can be "
+            "recalled in a later conversation. Use for things that stay true — "
+            "who they are, what they are building, decisions they have made. "
+            "Do not use for passing details or for what was just said."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": "One self-contained sentence, in the third person.",
+                }
+            },
+            "required": ["fact"],
+        },
+    },
 ]
 
 
@@ -64,4 +85,7 @@ def run(name: str, args: dict) -> str:
         )
     if name == "read_file":
         return _resolve(args["path"]).read_text()
+    if name == "remember":
+        semantic.remember(args["fact"])
+        return f"remembered: {args['fact']}"
     raise ValueError(f"unknown tool: {name}")

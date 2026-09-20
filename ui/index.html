@@ -102,6 +102,10 @@
   .row.mem { grid-template-columns: 44px 62px 1fr 64px 74px; cursor: default; align-items: baseline; }
   .row.mem .who { white-space: normal; }
   .row.mem.recalled { background: #16202a; }
+  .gatebar { display: flex; gap: 3px; margin-bottom: 4px; font: 500 11px var(--mono); }
+  .gatebar div { padding: 9px 12px; border-radius: 4px; color: #0e1116; }
+  .gatebar .skip { background: #6672c4; }
+  .gatebar .hit { background: var(--loop); }
   .row.growth { grid-template-columns: 34px 1fr auto; cursor: default; }
   .row.growth.planned .who { color: var(--faint); }
 
@@ -139,10 +143,10 @@
   <a data-view="loop">Loop <span class="count" id="c-turns">0</span></a>
   <a data-view="tools">Tools <span class="count" id="c-tools">0</span></a>
   <a data-view="guardrails">Guardrails <span class="count" id="c-rails">0</span></a>
-  <a data-view="memory">Memory <span class="count" id="c-mem">0</span></a>
+  <a data-view="memory">Episodic <span class="count" id="c-mem">0</span></a>
+  <a data-view="facts">Semantic <span class="count" id="c-facts">0</span></a>
   <a data-view="growth">Growth <span class="count" id="c-built">0/15</span></a>
   <div class="nav-label">Not built yet</div>
-  <a data-view="soon" data-layer="5">Semantic <span class="tag">L5</span></a>
   <a data-view="soon" data-layer="7">Personas <span class="tag">L7</span></a>
   <a data-view="soon" data-layer="11">Testing <span class="tag">L11</span></a>
 </nav>
@@ -187,6 +191,7 @@ async function render() {
   if (view === 'tools')      return el.innerHTML = await toolsView();
   if (view === 'guardrails') return el.innerHTML = await rails();
   if (view === 'memory')     return el.innerHTML = await memory();
+  if (view === 'facts')      return el.innerHTML = await factsView();
   if (view === 'growth')     return el.innerHTML = await growth();
   if (view === 'soon')       return el.innerHTML = soon();
 }
@@ -201,6 +206,8 @@ async function overview() {
       ${tile(s.tool_calls, 'tool calls')}
       ${tile((s.input_tokens + s.output_tokens).toLocaleString(), 'tokens')}
       ${tile(s.working_memory, 'working mem')}
+      ${tile(s.facts, 'facts')}
+      ${tile(s.gate_skip + '/' + (s.gate_skip + s.gate_retrieve), 'gate skips')}
     </div>
     <p class="section-label">Architecture — dimmed boxes aren't built yet</p>
     <div class="arch">
@@ -209,7 +216,7 @@ async function overview() {
       <div class="box loop"><b>Loop + tools</b><span>${s.tool_calls} calls · cap 6</span></div><div class="arrow">→</div>
       <div class="box harness"><b>Reply</b><span>end-loop guardrail</span></div><div class="arrow">→</div>
       <div class="box ops"><b>Trace</b><span>${s.turns} recorded</span></div><div class="arrow">→</div>
-      <div class="box harness"><b>Episodic</b><span id="a-mem">recall ${s.working_memory ? 'on' : 'on'}</span></div><div class="arrow">→</div>
+      <div class="box harness"><b>Memory</b><span id="a-mem">${s.facts} facts</span></div><div class="arrow">→</div>
       <div class="box ops dim"><b>Eval</b><span>layer 11</span></div>
     </div>` + await loop();
 }
@@ -270,6 +277,33 @@ async function memory() {
      </div>`).join('');
 }
 
+async function factsView() {
+  const f = await get('/api/facts');
+  const gates = f.gate.slice().reverse();
+  const hit = f.gate.filter(g => g.retrieve).length, miss = f.gate.length - hit;
+  const pct = f.gate.length ? Math.round(miss / f.gate.length * 100) : 0;
+  let out = `<p class="section-label">Retrieval gate — the decision before every turn</p>
+    <div class="gatebar">
+      <div class="skip" style="flex:${miss || 1}">${miss} skipped</div>
+      <div class="hit" style="flex:${hit || 1}">${hit} retrieved</div>
+    </div>
+    <p class="empty" style="padding:6px 0 18px">Memory was skipped on ${pct}% of turns —
+      that is context tokens not spent and irrelevant facts not injected.</p>`;
+  out += `<p class="section-label">${f.facts.length} durable facts</p>`;
+  out += f.facts.length
+    ? f.facts.map(x => `<div class="card"><div class="card-h">
+        <span class="chip ${x.source === 'told' ? 'live' : 'soon'}">${esc(x.source)}</span>
+        <span class="args">${x.created_at.slice(0, 16).replace('T', ' ')}</span></div>
+        <p>${esc(x.content)}</p></div>`).join('')
+    : `<p class="empty">Nothing yet. Tell Ninja something durable and ask it to remember.</p>`;
+  out += `<p class="section-label" style="margin-top:24px">Last ${gates.length} decisions</p>` +
+    (gates.map(g => `<div class="row mem">
+       <span class="chip ${g.retrieve ? 'live' : 'planned'}">${g.retrieve ? 'retrieve' : 'skip'}</span>
+       <span class="who">${esc(g.why)}</span></div>`).join('')
+     || `<p class="empty">No turns yet.</p>`);
+  return out;
+}
+
 async function growth() {
   const s = await get('/api/system');
   let out = '', phase = null;
@@ -312,6 +346,7 @@ async function counters() {
   $('c-rails').textContent = g.filter(r => r.live).length;
   const mem = await get('/api/memory');
   $('c-mem').textContent = mem.stats.messages;
+  $('c-facts').textContent = (await get('/api/stats')).facts;
   const box = document.getElementById('a-mem');
   if (box) box.textContent = mem.stats.messages + ' kept';
   $('c-built').textContent = sys.layers.filter(l => l.status === 'built').length + '/15';

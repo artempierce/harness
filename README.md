@@ -20,22 +20,25 @@ parts not built yet.
 
 ## Status
 
-Built layer by layer. Two of twelve so far.
+Built layer by layer. Six of fifteen so far.
 
 | | Layer | |
 |---|---|---|
 | 1 | Bare agent run | ✅ |
 | 2 | Loop, tools, stop condition | ✅ |
-| 3 | Tracing | — |
-| 4 | Episodic memory | — |
-| 5 | Semantic memory + retrieval gate | — |
-| 6 | Dashboard | — |
+| 3 | Tracing | ✅ |
+| 4 | Episodic memory | ✅ |
+| 5 | Semantic memory + retrieval gate | ✅ |
+| 6 | Dashboard | ✅ |
 | 7 | Personas | — |
 | 8 | Delegation | — |
-| 9 | Persona authoring | — |
+| 9 | The architect — proposals, no write access | — |
 | 10 | Consolidation | — |
 | 11 | Eval, diagnose, release | — |
 | 12 | LangGraph port | — |
+| 13 | Registry + guarded set | — |
+| 14 | Tool authoring | — |
+| 15 | The build pipeline | — |
 
 ---
 
@@ -72,8 +75,15 @@ no separate setup step.
 
 ```
 ninja               talk to Ninja in the terminal
-ninja dashboard     the browser cockpit → localhost:7777   (layer 6)
+ninja trace         the last 10 turns
+ninja trace 7       one turn, step by step
+ninja dashboard     the browser cockpit → localhost:7777
 ```
+
+The cockpit has chat on the right and the system on the left: overview, the
+loop, tools, guardrails, episodic and semantic memory, and a growth panel
+listing all fifteen layers. Every panel reads the running code — change
+`MAX_STEPS` and the guardrails panel moves.
 
 ---
 
@@ -87,19 +97,24 @@ you> what does this project depend on?
   ↳ read_file({'path': 'pyproject.toml'})
 
 agent> anthropic and python-dotenv.
-[working memory: 5 messages]
+[trace 12 · 5 messages · 910 in / 58 out · $0.00120]
 ```
 
 The `↳` lines are tool calls — the loop turning. You didn't name
 `pyproject.toml`; it found that from the listing and decided to read it.
 
-`[working memory: N messages]` is the conversation being re-sent to the API. It
-grows every turn, because the model is stateless and remembers nothing between
-requests. Quit and restart and it will have forgotten you — until layer 4.
+The bracket line is the turn's receipt. `5 messages` is the conversation being
+re-sent to the API — it grows every turn, because the model is stateless and
+remembers nothing between requests. `ninja trace 12` replays what happened.
 
-Today Ninja has two tools, `list_files` and `read_file`, both read-only and both
-rooted at this project. It cannot write, run commands, reach the web, or remember
-anything past the session.
+Today Ninja has three tools: `list_files`, `read_file` and `remember`. The
+first two are read-only and rooted at this project; the third writes a durable
+fact. It cannot run commands or reach the web.
+
+It does remember. Episodic memory replays the last few messages at startup, and
+semantic memory holds durable facts retrieved by relevance — but only when the
+**retrieval gate** decides the turn needs them. Most turns it skips, which is
+context tokens not spent and irrelevant facts not injected.
 
 ### Coming as layers land
 
@@ -116,8 +131,13 @@ you> make me an interview coach   # drafts one, asks first   (layer 9)
 ```
 ninja/            the agent — raw Python
   cli.py          the `ninja` command and its subcommands
-  agent.py        the loop and the REPL
+  agent.py        the loop, the REPL, the retrieval gate
   tools.py        what the model is allowed to call
+  trace.py        one record per turn
+  episodic.py     what was said, and recalling it
+  semantic.py     durable facts, and the gate in front of them
+  server.py       the cockpit's API
+tests/            33 tests — stubbed model, throwaway db, free and offline
 ninja_lc/         the same system on LangGraph         (layer 12)
 personas/         one PERSONA.md per persona           (layer 7)
 sql/              schema, shared by both               (layer 4)
@@ -146,6 +166,12 @@ would get you something else entirely. `pyproject.toml` maps one to the other vi
 `[project.scripts]` and `[tool.hatch.build.targets.wheel]`.
 
 ---
+
+## Contributing
+
+Nothing lands on `main` directly. Branch, open a PR, and the
+[quality gate](.github/workflows/gate.yml) runs tests, `ruff`, `pip-audit` and a
+secret scan before it can merge. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Why it's built this way
 

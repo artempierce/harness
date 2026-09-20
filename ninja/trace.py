@@ -63,6 +63,13 @@ class Trace:
             }
         )
 
+    def gate(self, retrieve: bool, why: str, hits: int) -> None:
+        # A skip is a decision, not an absence — record it so the ratio is
+        # visible and the reason is readable afterwards.
+        self.events.append(
+            {"type": "gate", "retrieve": retrieve, "why": why, "hits": hits, "ms": 0}
+        )
+
     def tool(self, name: str, args: dict, ok: bool, output: str, ms: int) -> None:
         self.events.append(
             {
@@ -137,7 +144,10 @@ def print_one(trace_id: int) -> None:
     print(f"you>   {ask}\n")
 
     for i, e in enumerate(json.loads(events), 1):
-        if e["type"] == "model":
+        if e["type"] == "gate":
+            verdict = f"retrieve {e['hits']}" if e["retrieve"] else "skip"
+            print(f"  {i:>2}. gate      {verdict:<12} {e['why']}")
+        elif e["type"] == "model":
             print(
                 f"  {i:>2}. model   {e['ms']:>6}ms  "
                 f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}"

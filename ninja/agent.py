@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import episodic, tools
+from ninja import episodic, semantic, tools
 from ninja.trace import Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
@@ -37,14 +37,30 @@ def ms_since(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-def run_turn(client: anthropic.Anthropic, messages: list, trace: Trace) -> str:
+def build_system(user_input: str, trace: Trace) -> str:
+    """Assemble the system prompt for this turn.
+
+    This is the retrieval gate: most turns get the plain prompt. Retrieving on
+    every turn would spend tokens and push irrelevant facts at the model, which
+    makes answers worse, not just slower.
+    """
+    retrieve, why, hits = semantic.gate(user_input)
+    trace.gate(retrieve, why, len(hits))
+    if not retrieve:
+        return SYSTEM
+    return SYSTEM + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
+
+
+def run_turn(
+    client: anthropic.Anthropic, messages: list, trace: Trace, system: str | None = None
+) -> str:
     """Loop until the model stops asking for tools. Returns its final text."""
     for _ in range(MAX_STEPS):
         started = time.perf_counter()
         response = client.messages.create(
             model=MODEL,
             max_tokens=2048,
-            system=SYSTEM,
+            system=system or SYSTEM,
             tools=tools.SCHEMAS,
             messages=messages,
         )
@@ -108,7 +124,7 @@ def main() -> None:
 
         messages.append({"role": "user", "content": user_input})
         trace = Trace(user_input)
-        reply = run_turn(client, messages, trace)
+        reply = run_turn(client, messages, trace, build_system(user_input, trace))
         trace_id = trace.finish(reply)
 
         episodic.save(session, "user", user_input, trace_id)

@@ -28,3 +28,16 @@ CREATE TABLE IF NOT EXISTS chat_log (
 );
 
 CREATE INDEX IF NOT EXISTS chat_log_recent ON chat_log (id DESC);
+
+-- Layer 5. Durable facts, searched by relevance rather than recency.
+-- An FTS5 table rather than a plain one: the index IS the storage, so there
+-- are no triggers to keep in sync. Metadata columns are UNINDEXED so they
+-- don't pollute the match.
+-- porter stemming so "deployment" finds "deploy" and "testing" finds "test".
+CREATE VIRTUAL TABLE IF NOT EXISTS facts USING fts5(
+    content,
+    source     UNINDEXED,   -- told | distilled
+    trace_id   UNINDEXED,
+    created_at UNINDEXED,
+    tokenize = 'porter unicode61'
+);

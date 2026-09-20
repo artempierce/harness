@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, tools, trace
+from ninja import agent, episodic, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
@@ -51,7 +51,7 @@ def index():
 def chat(message: Message):
     messages.append({"role": "user", "content": message.text})
     turn = trace.Trace(message.text)
-    reply = agent.run_turn(client(), messages, turn)
+    reply = agent.run_turn(client(), messages, turn, agent.build_system(message.text, turn))
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id)
     episodic.save(session, "assistant", reply, trace_id)
@@ -95,9 +95,9 @@ def stats():
     ).fetchone()
     events = conn.execute("SELECT events FROM traces").fetchall()
     conn.close()
-    tool_calls = sum(
-        1 for (blob,) in events for e in json.loads(blob) if e["type"] == "tool"
-    )
+    parsed = [e for (blob,) in events for e in json.loads(blob)]
+    tool_calls = sum(1 for e in parsed if e["type"] == "tool")
+    gates = [e for e in parsed if e["type"] == "gate"]
     return {
         "turns": turns,
         "tool_calls": tool_calls,
@@ -106,6 +106,9 @@ def stats():
         "output_tokens": tout,
         "avg_ms": int(avg),
         "working_memory": len(messages),
+        "facts": semantic.count(),
+        "gate_retrieve": sum(1 for g in gates if g["retrieve"]),
+        "gate_skip": sum(1 for g in gates if not g["retrieve"]),
     }
 
 
@@ -136,6 +139,8 @@ def guardrails_panel():
          "stops": "Tools reading outside the project", "live": True},
         {"name": "Hidden paths", "value": "refuse any segment starting with '.'",
          "stops": "Reading .env into the transcript", "live": True},
+        {"name": "Retrieval gate", "value": f"top-{semantic.TOP_K}, stopword-filtered",
+         "stops": "Paying context tokens on turns that need no facts", "live": True},
         {"name": "Tool allowlist", "value": "per persona", "layer": 7,
          "stops": "The tutor calling run_command", "live": False},
         {"name": "Depth cap", "value": "MAX_DEPTH", "layer": 8,
@@ -159,13 +164,22 @@ LAYERS = [
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3, 4}
-SCAFFOLD = {6}
+BUILT = {1, 2, 3, 4, 5, 6}
+SCAFFOLD = set()
 
 
 @app.get("/api/memory")
 def memory_panel():
     return {"stats": episodic.stats(), "history": episodic.history()}
+
+
+@app.get("/api/facts")
+def facts_panel():
+    conn = trace.connect()
+    reasons = rows_to_dicts(conn.execute("SELECT events FROM traces"))
+    conn.close()
+    gates = [e for r in reasons for e in json.loads(r["events"]) if e["type"] == "gate"]
+    return {"facts": semantic.all_facts(), "gate": gates[-20:]}
 
 
 @app.get("/api/system")

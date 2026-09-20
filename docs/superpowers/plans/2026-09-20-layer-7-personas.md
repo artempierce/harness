@@ -443,14 +443,23 @@ def test_path_escape_is_refused():
             tools.run("read_file", {"path": path}, ALL)
 
 
-def test_unknown_tool_raises():
+def test_an_unknown_tool_raises():
+    # Reachable only when the name IS allowed but has no implementation — a
+    # persona file naming a tool that was since renamed or removed.
     with pytest.raises(ValueError, match="unknown tool"):
+        tools.run("rm_rf", {"path": "/"}, ["rm_rf"])
+
+
+def test_an_unlisted_tool_is_refused_before_dispatch():
+    # The gate is the first statement in run(), so a name that is neither
+    # allowed nor implemented is refused as an allowlist violation.
+    with pytest.raises(ValueError, match="allowlist"):
         tools.run("rm_rf", {"path": "/"}, ALL)
 ```
 
-Note `test_unknown_tool_raises` passes `ALL`, so it still reaches the
-`unknown tool` branch rather than being caught by the allowlist first. That
-distinction is the point of the test — keep it.
+The allowlist check is ONE statement at the top of `run()`, never duplicated
+into the per-tool branches. A per-branch check is fail-open: adding a fourth
+tool without remembering to add its check silently grants it to every persona.
 
 - [ ] **Step 5: Update the seventh call site, in `tests/test_semantic.py`**
 

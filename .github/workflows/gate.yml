@@ -19,7 +19,7 @@ jobs:
 
       # Installs uv from a prebuilt binary and restores the wheel cache,
       # keyed on uv.lock — so an unchanged lockfile downloads nothing.
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"

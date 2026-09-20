@@ -149,3 +149,16 @@ def test_a_missing_argument_is_still_the_models_mistake():
     messages = [{"role": "user", "content": "read it"}]
     assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "Sorry, my mistake."
     assert messages[2]["content"][0]["is_error"] is True
+
+
+def test_the_trace_records_which_persona_ran_the_call():
+    # Model and instructions are per-turn from layer 7 on, and per-turn from
+    # layer 8 on within a single trace. A trace that records neither cannot say
+    # what the coach cost or which persona made the call that went wrong.
+    client = StubClient([text("ok")])
+    turn = trace.Trace("x")
+    coach = a_persona(name="interview-coach", model="claude-sonnet-5")
+    agent.run_turn(client, [{"role": "user", "content": "hi"}], turn, coach)
+
+    assert turn.events[0]["persona"] == "interview-coach"
+    assert turn.events[0]["model"] == "claude-sonnet-5"

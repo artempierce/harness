@@ -37,3 +37,20 @@ def test_large_tool_output_is_truncated():
     # biggest thing in the database.
     assert event["bytes"] == 50_000
     assert len(event["preview"]) == 200
+
+
+def test_an_unpriced_model_is_flagged_rather_than_counted_as_free():
+    # PRICING is keyed by model id, and a persona file can name any model at
+    # all. Zero is the honest number for a rate we do not have, but on the
+    # dashboard zero reads as "this turn cost nothing" — so the event says
+    # which it is.
+    t = trace.Trace("x")
+    t.model("claude-next-9", response([], "end_turn", (1_000_000, 1_000_000)), 10)
+    assert t.cost == 0.0
+    assert t.events[0]["unpriced"] is True
+
+
+def test_a_priced_model_is_not_flagged():
+    t = trace.Trace("x")
+    t.model("claude-haiku-4-5", response([], "end_turn", (100, 10)), 10)
+    assert t.events[0]["unpriced"] is False

@@ -66,7 +66,7 @@ def run_turn(
             tools=persona.schemas(),
             messages=messages,
         )
-        trace.model(persona.model, response, ms_since(started))
+        trace.model(persona.model, response, ms_since(started), persona.name)
         # Append the blocks, not the text — the tool_use blocks have to go back
         # so the model can see its own request alongside our result.
         messages.append({"role": "assistant", "content": response.content})

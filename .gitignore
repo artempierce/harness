@@ -1,6 +1,18 @@
+# Secrets — never commit
 .env
+
+# Python
 .venv/
 __pycache__/
 *.pyc
+
+# Ninja's own state: the database is yours, not the repo's
 .ninja/
 *.db
+
+# macOS folder metadata. Committed once by accident in layer 4.
+.DS_Store
+
+# Tool caches write their own .gitignore, so these are belt-and-braces
+.ruff_cache/
+.pytest_cache/

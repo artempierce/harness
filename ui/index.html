@@ -279,7 +279,7 @@ async function personasView() {
       <span class="chip ${x.name === p.active ? 'live' : 'soon'}">${x.name === p.active ? 'active' : 'idle'}</span>
       <span class="args">${esc(x.model)} · ${x.tools.map(esc).join(', ')}</span>
       ${x.name === p.active ? '' :
-        `<button class="switch" onclick="switchPersona('${esc(x.name)}')">switch</button>`}
+        `<button class="switch" data-persona="${esc(x.name)}">switch</button>`}
       </div><p>${esc(x.description)}</p></div>`).join('');
 }
 
@@ -443,6 +443,14 @@ $('composer').onsubmit = async ev => {
   } catch (err) { pending.remove(); say('sys', 'failed: ' + err.message); }
   $('send').disabled = false; $('input').focus();
 };
+
+// Delegated, so a persona name never has to survive being embedded in a JS
+// string inside an HTML attribute — esc() does not escape the single quote
+// that context needs, and from layer 9 these names are agent-authored.
+$('view').addEventListener('click', ev => {
+  const button = ev.target.closest('.switch');
+  if (button) switchPersona(button.dataset.persona);
+});
 
 counters(); render();
 setInterval(() => { counters(); if (view === 'overview' || view === 'loop') render(); }, 5000);

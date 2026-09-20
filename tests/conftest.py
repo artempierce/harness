@@ -30,6 +30,22 @@ def response(content, stop_reason, tokens=(100, 20)):
     )
 
 
+def a_persona(**overrides):
+    """A Persona for tests that are not about loading one."""
+    from ninja.personas import Persona
+
+    fields = {
+        "name": "test",
+        "description": "A persona used by tests.",
+        "instructions": "You are a test persona.",
+        "tools": ("list_files", "read_file", "remember"),
+        "model": "claude-haiku-4-5",
+    }
+    fields.update(overrides)
+    fields["tools"] = tuple(fields["tools"])
+    return Persona(**fields)
+
+
 class StubClient:
     """Replays a scripted list of responses. Records what it was sent."""
 

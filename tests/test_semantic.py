@@ -1,5 +1,7 @@
 from ninja import semantic, tools
 
+from .conftest import a_persona
+
 
 def facts(*items):
     for item in items:
@@ -54,7 +56,7 @@ def test_retrieved_facts_reach_the_system_prompt():
     from ninja import agent, trace
     facts("Sol is building an agent harness called Ninja")
     turn = trace.Trace("x")
-    prompt = agent.build_system("what am I building?", turn)
+    prompt = agent.build_system("what am I building?", turn, a_persona())
     assert "Ninja" in prompt
     assert turn.events[0]["type"] == "gate"
     assert turn.events[0]["retrieve"] is True
@@ -64,7 +66,7 @@ def test_a_skip_is_recorded_as_a_decision():
     from ninja import agent, trace
     facts("Sol is building an agent harness called Ninja")
     turn = trace.Trace("x")
-    prompt = agent.build_system("what is 2 + 2?", turn)
+    prompt = agent.build_system("what is 2 + 2?", turn, a_persona())
     assert "Ninja" not in prompt
     # A skip must be visible in the trace — an absence would be invisible.
     assert turn.events[0]["retrieve"] is False

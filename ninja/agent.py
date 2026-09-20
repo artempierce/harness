@@ -12,21 +12,18 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import episodic, semantic, tools
+from ninja import episodic, personas, semantic, tools
+from ninja.personas import Persona
 from ninja.trace import Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
 # touches the repo.
 load_dotenv()
 
-# Cheapest current model, per the cost rule. Swap to "claude-opus-5" when you
-# want the good one.
-MODEL = "claude-haiku-4-5"
-
-SYSTEM = (
-    "You are a helpful assistant with read access to this project's files. "
-    "Keep answers short."
-)
+# Kept for the guardrails panel and the CLI banner. The live values now come
+# from whichever persona the turn is running as.
+MODEL = personas.DEFAULT_MODEL
+SYSTEM = personas.DEFAULT_INSTRUCTIONS
 
 # The guardrail. The real exit is the model deciding it is done; this is the
 # backstop for when it gets stuck asking for tools in a cycle.
@@ -37,34 +34,39 @@ def ms_since(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
 
 
-def build_system(user_input: str, trace: Trace) -> str:
+def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
     """Assemble the system prompt for this turn.
 
-    This is the retrieval gate: most turns get the plain prompt. Retrieving on
-    every turn would spend tokens and push irrelevant facts at the model, which
-    makes answers worse, not just slower.
+    The persona supplies the instructions; the retrieval gate decides whether
+    facts are worth their tokens on top of them.
     """
     retrieve, why, hits = semantic.gate(user_input)
     trace.gate(retrieve, why, len(hits))
     if not retrieve:
-        return SYSTEM
-    return SYSTEM + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
+        return persona.instructions
+    return (
+        persona.instructions + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
+    )
 
 
 def run_turn(
-    client: anthropic.Anthropic, messages: list, trace: Trace, system: str | None = None
+    client: anthropic.Anthropic,
+    messages: list,
+    trace: Trace,
+    persona: Persona,
+    system: str | None = None,
 ) -> str:
     """Loop until the model stops asking for tools. Returns its final text."""
     for _ in range(MAX_STEPS):
         started = time.perf_counter()
         response = client.messages.create(
-            model=MODEL,
+            model=persona.model,
             max_tokens=2048,
-            system=system or SYSTEM,
-            tools=tools.SCHEMAS,
+            system=system or persona.instructions,
+            tools=persona.schemas(),
             messages=messages,
         )
-        trace.model(MODEL, response, ms_since(started))
+        trace.model(persona.model, response, ms_since(started))
         # Append the blocks, not the text — the tool_use blocks have to go back
         # so the model can see its own request alongside our result.
         messages.append({"role": "assistant", "content": response.content})
@@ -79,7 +81,7 @@ def run_turn(
             print(f"  ↳ {block.name}({block.input})")
             started = time.perf_counter()
             try:
-                output, failed = tools.run(block.name, block.input), False
+                output, failed = tools.run(block.name, block.input, persona.tools), False
             except Exception as exc:
                 output, failed = str(exc), True
             trace.tool(block.name, block.input, not failed, output, ms_since(started))

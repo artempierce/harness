@@ -17,12 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      # Installs uv from a prebuilt binary and restores the wheel cache,
+      # keyed on uv.lock — so an unchanged lockfile downloads nothing.
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
           python-version: "3.12"
-
-      - name: install uv
-        run: pipx install uv
 
       - name: install dependencies
         run: uv sync --dev

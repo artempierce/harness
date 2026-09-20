@@ -154,6 +154,59 @@ A realistic mutation matters. `if allowed and name not in allowed` is a
 mutation. Deleting the function body is not — anything catches that, and passing
 against it proves nothing.
 
+### Doing it by machine
+
+`mutmut` automates the loop above. It is configured in `pyproject.toml` and run
+from the **mutation testing** workflow, which is manual: mutmut runs the whole
+suite once per mutant, so it takes minutes where the gate takes seconds.
+
+```bash
+uv run mutmut run              # everything under ninja/
+uv run mutmut run ninja.tools  # one module
+uv run mutmut results          # what got away
+```
+
+Two things about reading the output, both of which look alarming and are not:
+
+**`mutmut results` lists only survivors.** Killed mutants are absent, so an
+empty list is the good outcome. A tally that says "0 killed" is a tally that
+counted the wrong thing.
+
+**Survivors are expected and are not a to-do list.** Most are string-literal
+changes no assertion should reasonably pin — `"\n".join` becoming `"XX\nXX".join`
+survives because `test_list_and_read_work` checks that a filename appears in the
+listing, not how the lines are separated, and pinning the separator would make
+the test worse. Others are equivalent mutants that cannot be killed at all.
+Read the list for the one that makes you wince; do not chase it to zero.
+
+The survivor worth acting on is the one where the mutation changes behaviour a
+caller would notice. When `or` became `and` in the allowlist guard, a test
+caught it — that is the class this tool exists to police.
+
+## Coverage
+
+Coverage runs on every `pytest` invocation and prints uncovered line numbers.
+The gate holds it at **89%** via `--cov-fail-under`, which is what the suite
+measures today rather than a target. It is a ratchet: raise it deliberately when
+tests are added, never lower it quietly to make a build pass.
+
+Two details that will otherwise cost you an afternoon:
+
+- The table prints a **rounded** figure. It reads 90%; the real number is
+  89.58%, and `--cov-fail-under` compares against the real one. A threshold set
+  from the printed number fails the build on a run the report calls passing.
+- `--cov-fail-under` is in the workflow, **not** in `addopts`, because in
+  `addopts` it would also apply to `pytest -m live` — two tests that cover
+  almost nothing and would fail every smoke run.
+
+**Coverage finds absence, not weakness.** It answers "did this line run", which
+is a different question from "would anything notice if it ran differently".
+Every anti-pattern named above executed the code it failed to test and would
+have shown green lines. What coverage is genuinely good at is the gap it found
+the day it was added: `ninja/cli.py` at 0%, five layers old and never once
+exercised. Use it to find code nothing touches, and mutation testing to find
+code nothing checks.
+
 ### Named anti-patterns
 
 All seven have happened here.

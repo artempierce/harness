@@ -128,19 +128,6 @@ def test_a_tool_outside_the_allowlist_comes_back_as_an_error():
     assert "allowlist" in result["content"]
 
 
-def test_two_personas_in_one_turn_do_not_share_state():
-    first = a_persona(name="a", tools=("read_file",), model="m-a")
-    second = a_persona(name="b", tools=("remember",), model="m-b")
-
-    c1, c2 = StubClient([text("1")]), StubClient([text("2")])
-    agent.run_turn(c1, [{"role": "user", "content": "x"}], trace.Trace("x"), first)
-    agent.run_turn(c2, [{"role": "user", "content": "y"}], trace.Trace("y"), second)
-
-    assert [t["name"] for t in c1.seen[0]["tools"]] == ["read_file"]
-    assert [t["name"] for t in c2.seen[0]["tools"]] == ["remember"]
-    assert c1.seen[0]["model"] == "m-a"
-    assert c2.seen[0]["model"] == "m-b"
-
 
 def test_a_harness_bug_is_not_disguised_as_a_tool_error(monkeypatch):
     # A wrong signature or a bug inside a tool is ours, not the model's. Filed

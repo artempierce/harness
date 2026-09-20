@@ -81,7 +81,13 @@ def chat(message: Message):
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
-    messages, active = working, persona.name
+    messages = working
+    # Only a request that named a persona moves the default. Writing it back on
+    # every turn also undoes a switch that landed while this one was running:
+    # the click is acknowledged, the panel repaints, and then a turn that
+    # started before it quietly puts the old default back.
+    if message.persona:
+        active = persona.name
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id)
     episodic.save(session, "assistant", reply, trace_id)

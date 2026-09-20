@@ -141,3 +141,35 @@ def test_a_broken_persona_file_is_reported_with_its_reason(monkeypatch, tmp_path
     reply = client.get("/api/personas")
     assert reply.status_code == 500
     assert "broken" in reply.json()["detail"]
+
+
+def test_a_switch_that_lands_mid_turn_reaches_neither_this_turn_nor_the_next(monkeypatch):
+    # The claim layer 7 rests on: a turn holds a resolved Persona, so a switch
+    # arriving while it is on step 1 of 2 cannot change the toolset underneath
+    # it — and, the other half, the turn must not undo the switch on its way
+    # out.
+    from .conftest import StubClient, block, response
+
+    class SwitchesMidTurn(StubClient):
+        def create(self, **kw):
+            if not self.seen:
+                # Exactly what POST /api/persona does, minus the re-entrant
+                # request a TestClient cannot make from inside a handler.
+                server.active = "interview-coach"
+            return super().create(**kw)
+
+    stub = SwitchesMidTurn([
+        response([block(type="tool_use", id="t1", name="list_files", input={"path": "."})],
+                 "tool_use"),
+        response([block(type="text", text="done")], "end_turn"),
+    ])
+    monkeypatch.setattr(server, "messages", [])
+    monkeypatch.setattr(server, "active", "assistant")
+    monkeypatch.setattr(server, "client", lambda: stub)
+
+    client.post("/api/chat", json={"text": "list the files"})
+
+    # Both model calls ran as the persona the turn started with.
+    for call in stub.seen:
+        assert [t["name"] for t in call["tools"]] == ["list_files", "read_file", "remember"]
+    assert server.active == "interview-coach"

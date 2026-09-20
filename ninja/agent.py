@@ -20,11 +20,6 @@ from ninja.trace import Trace
 # touches the repo.
 load_dotenv()
 
-# Kept for the guardrails panel and the CLI banner. The live values now come
-# from whichever persona the turn is running as.
-MODEL = personas.DEFAULT_MODEL
-SYSTEM = personas.DEFAULT_INSTRUCTIONS
-
 # The guardrail. The real exit is the model deciding it is done; this is the
 # backstop for when it gets stuck asking for tools in a cycle.
 MAX_STEPS = 6

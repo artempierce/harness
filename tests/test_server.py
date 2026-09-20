@@ -173,3 +173,22 @@ def test_a_switch_that_lands_mid_turn_reaches_neither_this_turn_nor_the_next(mon
     for call in stub.seen:
         assert [t["name"] for t in call["tools"]] == ["list_files", "read_file", "remember"]
     assert server.active == "interview-coach"
+
+
+def test_the_allowlist_is_reported_as_enforced():
+    # It shipped in this layer. The panel went on listing it beside the layer-8
+    # and layer-13 rails as something that had not arrived yet, in a cockpit
+    # whose own Growth tab marks layer 7 built.
+    rails = client.get("/api/guardrails").json()
+    rail = next(r for r in rails if r["name"] == "Tool allowlist")
+    assert rail["live"] is True
+    assert "layer" not in rail
+
+
+def test_the_system_panel_no_longer_claims_one_model_for_the_harness():
+    # Since layer 7 a model belongs to a persona. A second copy of that fact is
+    # how the brand line ends up naming a model no turn has run on.
+    assert "model" not in client.get("/api/system").json()
+    cast = client.get("/api/personas").json()
+    active = next(p for p in cast["personas"] if p["name"] == cast["active"])
+    assert active["model"]

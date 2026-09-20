@@ -182,8 +182,8 @@ def guardrails_panel():
          "stops": "Reading .env into the transcript", "live": True},
         {"name": "Retrieval gate", "value": f"top-{semantic.TOP_K}, stopword-filtered",
          "stops": "Paying context tokens on turns that need no facts", "live": True},
-        {"name": "Tool allowlist", "value": "per persona", "layer": 7,
-         "stops": "The tutor calling run_command", "live": False},
+        {"name": "Tool allowlist", "value": "persona.tools, refused in tools.run",
+         "stops": "The interview coach calling list_files", "live": True},
         {"name": "Depth cap", "value": "MAX_DEPTH", "layer": 8,
          "stops": "A → B → C → A delegation chains", "live": False},
         {"name": "Subset rule", "value": "child ⊆ parent", "layer": 8,
@@ -262,8 +262,10 @@ def facts_panel():
 
 @app.get("/api/system")
 def system_panel():
+    # No "model" here. Since layer 7 the model belongs to a persona, and
+    # /api/personas is the one place that reports it — a second copy is how a
+    # panel ends up naming a model no turn has run on.
     return {
-        "model": agent.MODEL,
         "layers": [
             {"n": n, "name": name, "phase": phase,
              "status": "built" if n in BUILT else "scaffold" if n in SCAFFOLD else "planned"}

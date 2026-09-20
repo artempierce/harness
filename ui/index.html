@@ -402,6 +402,7 @@ async function readCounters() {
   $('c-mem').textContent = mem.stats.messages;
   $('c-facts').textContent = (await get('/api/stats')).facts;
   const cast = await get('/api/personas');
+  const active = cast.personas.find(p => p.name === cast.active);
   $('c-personas').textContent = cast.personas.length;
   $('chat-persona').textContent = cast.active;
   const box = document.getElementById('a-mem');
@@ -410,7 +411,7 @@ async function readCounters() {
   $('c-built').textContent = built + '/15';
   // Was hardcoded to "layer 3 of 15" and never updated. Same source as Growth.
   $('view-sub').textContent = `.ninja/state.db · built through layer ${built} of 15`;
-  $('brand-model').textContent = sys.model;
+  $('brand-model').textContent = active ? active.model : cast.active;
   $('wm-badge').textContent = 'working memory: ' + s.working_memory;
 }
 

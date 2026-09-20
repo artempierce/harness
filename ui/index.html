@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ninja cockpit</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E %3Crect width='32' height='32' rx='7' fill='%230e1116'/%3E %3Cpath d='M16 4c-5.5 0-9.5 3.8-9.5 9v6.5c0 4.6 4 8.5 9.5 8.5s9.5-3.9 9.5-8.5V13c0-5.2-4-9-9.5-9z' fill='%23f0798d'/%3E %3Crect x='4' y='12.9' width='24' height='5.8' fill='%230e1116'/%3E %3Crect x='8.6' y='14' width='5.4' height='3.5' rx='1.75' fill='%23f0798d' transform='rotate(7 11.3 15.75)'/%3E %3Crect x='18' y='14' width='5.4' height='3.5' rx='1.75' fill='%23f0798d' transform='rotate(-7 20.7 15.75)'/%3E %3C/svg%3E">
 <style>
   :root {
     --bg: #0e1116; --panel: #151a21; --panel-2: #1b212a; --line: #242b35;
@@ -182,10 +183,31 @@ document.querySelectorAll('.nav a').forEach(a => a.onclick = () => {
   render();
 });
 
-async function get(path) { return (await fetch(path)).json(); }
+// fetch only rejects on a network failure — a 4xx/5xx arrives as a resolved
+// promise, so without this check a failed panel renders as "undefined".
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json();
+}
+
+function detail(body, status) {
+  const d = body && body.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) return d.map(x => x.msg || JSON.stringify(x)).join('; ');
+  return `server returned ${status}`;
+}
 
 async function render() {
   const el = $('view');
+  try {
+    return await paint(el);
+  } catch (err) {
+    el.innerHTML = `<p class="empty">Couldn't load this panel — ${esc(err.message)}</p>`;
+  }
+}
+
+async function paint(el) {
   if (view === 'overview')   return el.innerHTML = await overview();
   if (view === 'loop')       return el.innerHTML = await loop();
   if (view === 'tools')      return el.innerHTML = await toolsView();
@@ -339,6 +361,10 @@ async function show(id) {
 }
 
 async function counters() {
+  try { await readCounters(); } catch (err) { console.error('counters failed', err); }
+}
+
+async function readCounters() {
   const [s, t, g, sys] = await Promise.all(
     ['/api/stats','/api/tools','/api/guardrails','/api/system'].map(get));
   $('c-turns').textContent = s.turns;
@@ -349,7 +375,10 @@ async function counters() {
   $('c-facts').textContent = (await get('/api/stats')).facts;
   const box = document.getElementById('a-mem');
   if (box) box.textContent = mem.stats.messages + ' kept';
-  $('c-built').textContent = sys.layers.filter(l => l.status === 'built').length + '/15';
+  const built = sys.layers.filter(l => l.status === 'built').length;
+  $('c-built').textContent = built + '/15';
+  // Was hardcoded to "layer 3 of 15" and never updated. Same source as Growth.
+  $('view-sub').textContent = `.ninja/state.db · built through layer ${built} of 15`;
   $('brand-model').textContent = sys.model;
   $('wm-badge').textContent = 'working memory: ' + s.working_memory;
 }
@@ -371,8 +400,10 @@ $('composer').onsubmit = async ev => {
   say('you', text);
   const pending = say('sys', 'thinking…');
   try {
-    const r = await (await fetch('/api/chat', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})})).json();
+    const res = await fetch('/api/chat', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(detail(r, res.status));
     pending.remove();
     say('bot', r.reply);
     const link = say('sys', '');

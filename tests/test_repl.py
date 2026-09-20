@@ -24,10 +24,32 @@ def test_a_bare_persona_command_lists_the_cast(capsys):
     assert "assistant" in out
 
 
-def test_switching_does_not_touch_working_memory():
-    # The transcript is kept across a switch — swapping hats should not lose
-    # the conversation. The persona lives in the system prompt, not in messages.
-    messages = [{"role": "user", "content": "earlier"}]
-    before = list(messages)
-    agent.switch("/persona interview-coach", personas.load("assistant"))
-    assert messages == before
+def test_a_persona_command_never_becomes_a_user_turn(monkeypatch, capsys):
+    # The invariant lives in main()'s ordering: a /persona line is handled and
+    # continue'd before messages.append, so the command never reaches the
+    # conversation. Testing switch() alone cannot prove this — switch() is not
+    # given the transcript.
+    from .conftest import StubClient
+
+    # No scripted responses: if a turn were attempted, .create() would raise
+    # IndexError off the empty script rather than passing quietly.
+    stub = StubClient([])
+    monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
+    monkeypatch.setattr(agent.episodic, "recall", lambda: [])
+
+    lines = iter(["/persona interview-coach", ""])
+
+    def fake_input(prompt=""):
+        try:
+            return next(lines)
+        except StopIteration as end:
+            raise EOFError from end
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    agent.main()
+
+    # The command was intercepted, so the model was never called.
+    assert stub.seen == []
+    out = capsys.readouterr().out
+    assert "interview-coach" in out

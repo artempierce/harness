@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, semantic, tools, trace
+from ninja import agent, episodic, personas, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
@@ -22,6 +22,10 @@ app = FastAPI(title="ninja cockpit")
 # Seeded from episodic memory at import, so a restart picks the thread back up.
 session = episodic.new_session()
 messages: list = episodic.recall()
+# Which persona an unspecified request defaults to. A *name*, not a resolved
+# Persona: it is read once at the top of a request and immediately turned into
+# a frozen object, so a switch cannot reach a turn already in flight.
+active: str = personas.DEFAULT
 _client: anthropic.Anthropic | None = None
 
 
@@ -40,6 +44,11 @@ def rows_to_dicts(cursor) -> list[dict]:
 
 class Message(BaseModel):
     text: str
+    persona: str | None = None
+
+
+class PersonaName(BaseModel):
+    name: str
 
 
 @app.get("/")
@@ -52,24 +61,36 @@ def index():
 
 @app.post("/api/chat")
 def chat(message: Message):
+    # The persona is resolved once, here, before the loop starts. run_turn is
+    # handed the object; nothing inside the loop reads `active` again.
+    global messages, active
+    try:
+        persona = personas.load(message.persona or active)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # run_turn appends as it goes. Handing it the live list means a failure
     # mid-loop leaves a tool_use block with no matching tool_result behind, and
     # the API rejects every turn after that until the process restarts. Build
     # the turn on a copy and adopt it only once it has come back whole.
-    global messages
     working = [*messages, {"role": "user", "content": message.text}]
     turn = trace.Trace(message.text)
     try:
         reply = agent.run_turn(
-            client(), working, turn, agent.build_system(message.text, turn)
+            client(), working, turn, persona, agent.build_system(message.text, turn, persona)
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
-    messages = working
+    messages, active = working, persona.name
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id)
     episodic.save(session, "assistant", reply, trace_id)
-    return {"reply": reply, "trace_id": trace_id, "working_memory": len(messages)}
+    return {
+        "reply": reply,
+        "trace_id": trace_id,
+        "working_memory": len(messages),
+        "persona": persona.name,
+    }
 
 
 @app.get("/api/traces")
@@ -178,8 +199,37 @@ LAYERS = [
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3, 4, 5, 6}
+BUILT = {1, 2, 3, 4, 5, 6, 7}
 SCAFFOLD = set()
+
+
+@app.get("/api/personas")
+def personas_panel():
+    return {
+        "active": active,
+        "personas": [
+            {
+                "name": p.name,
+                # What layer 8 will route on.
+                "description": p.description,
+                "model": p.model,
+                # Read from the file, so the panel cannot claim a capability
+                # the allowlist does not grant.
+                "tools": list(p.tools),
+            }
+            for p in personas.all()
+        ],
+    }
+
+
+@app.post("/api/persona")
+def set_persona(body: PersonaName):
+    global active
+    try:
+        active = personas.load(body.name).name
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"active": active}
 
 
 @app.get("/api/memory")
@@ -205,7 +255,6 @@ def system_panel():
              "status": "built" if n in BUILT else "scaffold" if n in SCAFFOLD else "planned"}
             for n, name, phase in LAYERS
         ],
-        "personas": [],   # layer 7
         "evals": [],      # layer 11
     }
 

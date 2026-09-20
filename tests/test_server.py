@@ -74,3 +74,54 @@ def test_a_good_turn_still_grows_working_memory(monkeypatch):
     assert body["reply"] == "four"
     assert body["working_memory"] == 2
     assert len(server.messages) == 2
+
+
+def test_the_personas_panel_lists_the_cast():
+    body = client.get("/api/personas").json()
+    names = sorted(p["name"] for p in body["personas"])
+    assert names == ["assistant", "interview-coach"]
+    assert body["active"] == "assistant"
+
+
+def test_the_panel_reports_the_tools_the_harness_enforces():
+    # The panel must not claim a capability the allowlist does not grant.
+    from ninja import personas
+
+    body = client.get("/api/personas").json()
+    shown = {p["name"]: p["tools"] for p in body["personas"]}
+    assert shown["interview-coach"] == list(personas.load("interview-coach").tools)
+
+
+def test_setting_the_persona_changes_the_default(monkeypatch):
+    monkeypatch.setattr(server, "active", "assistant")
+    assert client.post("/api/persona", json={"name": "interview-coach"}).json() == {
+        "active": "interview-coach"
+    }
+    assert client.get("/api/personas").json()["active"] == "interview-coach"
+
+
+def test_an_unknown_persona_is_a_400(monkeypatch):
+    monkeypatch.setattr(server, "active", "assistant")
+    assert client.post("/api/persona", json={"name": "nonesuch"}).status_code == 400
+    # The active persona is unchanged by a failed switch.
+    assert server.active == "assistant"
+
+
+def test_a_chat_request_can_name_its_persona(monkeypatch):
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr(server, "messages", [])
+    monkeypatch.setattr(server, "active", "assistant")
+    monkeypatch.setattr(server, "client", lambda: stub)
+
+    client.post("/api/chat", json={"text": "hi", "persona": "interview-coach"})
+
+    assert [t["name"] for t in stub.seen[0]["tools"]] == ["read_file", "remember"]
+    # Naming a persona on a request also makes it the default for the next one.
+    assert server.active == "interview-coach"
+
+
+def test_system_panel_no_longer_carries_a_personas_stub():
+    # One source for one fact. /api/personas is the panel's source.
+    assert "personas" not in client.get("/api/system").json()

@@ -56,6 +56,20 @@ def _parse(text: str, source: Path) -> Persona:
     missing = REQUIRED - set(meta)
     if missing:
         raise ValueError(f"{source}: frontmatter is missing {sorted(missing)}")
+    # A tool list is the persona's capability grant, so a mistake in it has to
+    # be an error rather than a quiet subtraction. `tools: read_file` without
+    # the brackets is a string, and tuple() would shred it into single letters;
+    # a typo in a name would drop the capability and leave the persona looking
+    # intact. From layer 9 the agent writes these files, and neither shape is
+    # something it could notice went wrong.
+    if not isinstance(meta["tools"], list):
+        raise ValueError(f"{source}: tools must be a list, e.g. [read_file, remember]")
+    known = {s["name"] for s in tools.SCHEMAS}
+    unknown = [t for t in meta["tools"] if t not in known]
+    if unknown:
+        raise ValueError(
+            f"{source}: no such tool {unknown} — this harness has {sorted(known)}"
+        )
     return Persona(
         name=meta["name"],
         description=" ".join(str(meta["description"]).split()),
@@ -82,7 +96,15 @@ def load(name: str) -> Persona:
         if name == DEFAULT:
             return _fallback()
         raise ValueError(f"no persona named {name!r} in {DIR}")
-    return _parse(path.read_text(), path)
+    persona = _parse(path.read_text(), path)
+    # The directory is the identity: `active`, the /persona command and the
+    # cockpit's switch button all round-trip a persona by name through load().
+    # A file whose `name` disagrees with its directory loads once and is then
+    # unreachable, so every later lookup fails on a persona the panel still
+    # lists.
+    if persona.name != name:
+        raise ValueError(f"{path}: name is {persona.name!r} but the directory is {name!r}")
+    return persona
 
 
 def all() -> list[Persona]:  # noqa: A001 — reads as personas.all()

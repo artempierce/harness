@@ -79,3 +79,36 @@ def test_a_missing_personas_dir_falls_back_to_layer_6_behaviour(tmp_path, monkey
     assert fallback.name == personas.DEFAULT
     assert len(fallback.schemas()) == len(tools.SCHEMAS)
     assert fallback.model == personas.DEFAULT_MODEL
+
+
+def _write(tmp_path, monkeypatch, name, frontmatter):
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    (tmp_path / name).mkdir()
+    (tmp_path / name / "PERSONA.md").write_text(f"---\n{frontmatter}---\n\nbody\n")
+
+
+def test_an_unknown_tool_name_is_refused(tmp_path, monkeypatch):
+    # A typo in `tools:` used to remove a capability silently — the persona
+    # loaded, and the tool it named simply never appeared in any request.
+    _write(tmp_path, monkeypatch, "typo",
+           "name: typo\ndescription: d\ntools: [read_file, reed_file]\nmodel: m\n")
+    with pytest.raises(ValueError, match="reed_file"):
+        personas.load("typo")
+
+
+def test_a_tool_list_written_as_a_string_is_refused(tmp_path, monkeypatch):
+    # `tools: read_file` is valid YAML and a string. tuple() would turn it into
+    # nine one-letter tool names, leaving a persona that holds nothing at all.
+    _write(tmp_path, monkeypatch, "flat",
+           "name: flat\ndescription: d\ntools: read_file\nmodel: m\n")
+    with pytest.raises(ValueError, match="must be a list"):
+        personas.load("flat")
+
+
+def test_a_name_that_disagrees_with_its_directory_is_refused(tmp_path, monkeypatch):
+    # Every lookup goes through the directory name, so a mismatch makes the
+    # persona unreachable the moment anything tries to load it back by name.
+    _write(tmp_path, monkeypatch, "coach",
+           "name: interview-coach\ndescription: d\ntools: [read_file]\nmodel: m\n")
+    with pytest.raises(ValueError, match="directory"):
+        personas.load("coach")

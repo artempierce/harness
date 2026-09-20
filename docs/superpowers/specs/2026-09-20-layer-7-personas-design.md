@@ -118,26 +118,63 @@ the turn dying — the loop already handles this
 An allowlist, not a blocklist. A blocklist is not sufficient and never becomes
 sufficient by being longer.
 
+## What earns a persona
+
+A tool is a capability — a verb the harness executes. A persona is a **judgment
+policy** — what to prioritise, what to refuse, what counts as done.
+
+The test:
+
+> Strip the instructions and keep the tool list. If the output does not get
+> worse, it was never a persona.
+
+An earlier draft of this spec proposed an `archivist` with `read_file` and
+`remember`. It fails the test: its instructions would have said "store durable
+facts, not passing details", and `tools.py` already says exactly that in the
+`remember` description the model reads. A tool wearing a costume. It is cut, and
+the near-miss is recorded here because the same mistake is easy to repeat every
+time a new tool lands — a subset of the tool list is not on its own a persona.
+
+Four signals that a persona is genuinely needed, weakest first:
+
+1. The tool list must genuinely differ — a capability has to be *removed*
+2. Same tools, a different definition of done
+3. The user wants behaviour that contradicts the default's instructions
+4. **The instructions need an "except when"**
+
+Signal 4 is the operative one. If a single set of instructions has to say "do A,
+except when X, then do the opposite", that is two personas being held in one
+file.
+
 ## The initial cast
 
 `ARCHITECTURE.md` names `researcher` and `tutor-en`, both of which need
 `search_web` — a tool the cockpit's own Tools panel places at layers 8–14. A
-researcher that cannot reach the web is not a researcher, so the designed cast is
-deferred and the first cast is built from the three tools that exist:
+researcher that cannot reach the web is not a researcher, so that cast is
+deferred. Two personas ship, and both pass the test above:
 
-| Persona | Tools | Exists to show |
+| Persona | Tools | Why it is a persona and not a tool |
 |---|---|---|
-| `assistant` | `list_files`, `read_file`, `remember` | the default; unchanged behaviour from layer 6 |
-| `codebase-guide` | `list_files`, `read_file` | an allowlist that genuinely removes a capability |
-| `archivist` | `read_file`, `remember` | a different allowlist, overlapping but not nested |
+| `assistant` | `list_files`, `read_file`, `remember` | the default orchestrator; unchanged behaviour from layer 6 |
+| `interview-coach` | `read_file`, `remember` | quizzes rather than explains, refuses to hand over the answer, and stores weak spots as durable facts — none of which is expressible in a tool description |
 
-The point of the cast is that the allowlist is **observable**: ask
-`codebase-guide` to remember something and it cannot, because the tool is not in
-its request. That is the layer demonstrating itself, which no amount of prose
-achieves.
+Two, not three, and not one. One persona cannot demonstrate that the allowlist
+bites; three meant inventing a third. `interview-coach` differs from `assistant`
+on **both** axes at once — it cannot call `list_files`, and its instructions
+change what a good answer looks like — which is what makes it a fair test of the
+mechanism rather than a demo of it.
 
 `assistant` is the default. If `personas/` is missing or empty, the harness falls
 back to today's behaviour rather than failing to start.
+
+## How a third persona gets proposed
+
+Not in this layer, but it is what the `description` field is for. At layer 9 the
+orchestrator watches for the signals above — a request it repeatedly handles
+badly, or one whose instructions would contradict its own — drafts a
+`PERSONA.md`, and shows it for approval before anything is written. Layer 15
+turns that approval into a pull request. `CONTRIBUTING.md` describes that gate
+already, which is why it was written before any of it exists.
 
 ## Switching
 
@@ -245,9 +282,10 @@ they land is what keeps this layer small.
 gate. It is the first dependency added for convenience rather than necessity, and
 that is worth noticing.
 
-**The cast is illustrative, not useful.** `codebase-guide` and `archivist` exist
-to make the allowlist visible, not because anyone needs them daily. The useful
-cast arrives with the tools that make it useful. Layer 7 is the mechanism.
+**Two personas is a thin cast.** It is enough to prove the mechanism and no
+more. The risk is not that it is too small but that the next few get added
+without re-running the test above — the pressure to fill a table is real, and it
+is how a persona directory turns into a pile of tool aliases.
 
 **`tools.run` grows a required parameter.** Four existing tests call it; they are
 updated in the same commit. A default of "all tools" was considered and rejected

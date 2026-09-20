@@ -43,3 +43,8 @@ select = ["E", "F", "B", "S", "SIM", "UP", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The live test is the only one that spends money, so it is deselected here and
+# never runs in the PR gate. The post-merge smoke workflow opts back in with
+# `pytest -m live` — a later -m on the command line wins over this one.
+addopts = "-m 'not live'"
+markers = ["live: hits the real API — costs real tokens, post-merge only"]

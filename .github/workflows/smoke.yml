@@ -1,0 +1,37 @@
+name: post-merge smoke
+
+# The quality gate is free and offline, which is what lets it run on every
+# pull request. This one costs real tokens, so it runs only after a merge has
+# landed on main — the point is to find out that the real API still answers,
+# not to block a review on it.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    # A fork PR merge can't see the secret; skip rather than fail red.
+    if: github.repository_owner == 'artempierce'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.12"
+
+      - name: install dependencies
+        run: uv sync --dev
+
+      - name: live ping
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # One turn on the cheapest model. -m live overrides the default
+        # deselection in pyproject.
+        run: uv run pytest -m live -q

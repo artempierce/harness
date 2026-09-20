@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 import anthropic
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -44,14 +44,28 @@ class Message(BaseModel):
 
 @app.get("/")
 def index():
-    return FileResponse(UI / "index.html")
+    # Without Cache-Control the browser falls back to heuristic freshness and
+    # may serve a stale copy without asking. This page changes every layer, so
+    # it must revalidate — the ETag still makes that a 304 in the common case.
+    return FileResponse(UI / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.post("/api/chat")
 def chat(message: Message):
-    messages.append({"role": "user", "content": message.text})
+    # run_turn appends as it goes. Handing it the live list means a failure
+    # mid-loop leaves a tool_use block with no matching tool_result behind, and
+    # the API rejects every turn after that until the process restarts. Build
+    # the turn on a copy and adopt it only once it has come back whole.
+    global messages
+    working = [*messages, {"role": "user", "content": message.text}]
     turn = trace.Trace(message.text)
-    reply = agent.run_turn(client(), messages, turn, agent.build_system(message.text, turn))
+    try:
+        reply = agent.run_turn(
+            client(), working, turn, agent.build_system(message.text, turn)
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
+    messages = working
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id)
     episodic.save(session, "assistant", reply, trace_id)

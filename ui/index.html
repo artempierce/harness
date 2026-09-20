@@ -191,7 +191,9 @@ document.querySelectorAll('.nav a').forEach(a => a.onclick = () => {
 // promise, so without this check a failed panel renders as "undefined".
 async function get(path) {
   const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  // The server names the file and the reason it could not be read. Reducing
+  // that to a status code throws away the only part worth showing.
+  if (!r.ok) throw new Error(detail(await r.json().catch(() => ({})), r.status) + ` (${path})`);
   return r.json();
 }
 
@@ -378,36 +380,59 @@ async function show(id) {
   await render();
   const d = $('detail'); if (!d) return;
   d.innerHTML = `<p class="section-label" style="margin-top:22px">Trace #${t.id} — ${t.events.length} events in ${(t.duration_ms/1000).toFixed(1)}s</p>` +
-    t.events.map((e, i) => e.type === 'model'
-      ? `<div class="step model"><span class="k">${i+1}</span><span class="k">model</span>
-         <span class="d">${e.in} in / ${e.out} out → ${e.stop}</span><span class="t">${e.ms}ms</span></div>`
-      : `<div class="step ${e.ok ? 'tool' : 'tool err'}"><span class="k">${i+1}</span>
-         <span class="k">${e.ok ? 'tool' : 'error'}</span>
-         <span class="d">${esc(e.name)}(${esc(JSON.stringify(e.args))})</span>
-         <span class="t">${e.ms}ms · ${e.bytes}b</span>
-         <span class="preview">${esc(e.preview)}</span></div>`).join('');
+    t.events.map((e, i) => step(e, i)).join('');
+}
+
+// A trace holds three kinds of event, not two. A gate step fell through to the
+// tool branch, which reads e.name and e.args off it, finds neither, and draws
+// "undefined(undefined)" in the colour reserved for a failed tool call — on
+// every turn, because the gate runs on every turn.
+function step(e, i) {
+  if (e.type === 'gate') return `<div class="step"><span class="k">${i+1}</span>
+    <span class="k">gate</span>
+    <span class="d">${e.retrieve ? 'retrieve ' + e.hits : 'skip'} — ${esc(e.why)}</span>
+    <span class="t">${e.ms}ms</span></div>`;
+  if (e.type === 'model') {
+    // Older rows predate both fields, and a persona and model are only worth
+    // the width once there is more than one of each.
+    const ran = [e.persona, e.model].filter(Boolean).map(esc).join(' ');
+    return `<div class="step model"><span class="k">${i+1}</span><span class="k">model</span>
+      <span class="d">${ran ? ran + ' · ' : ''}${e.in} in / ${e.out} out → ${e.stop}${e.unpriced ? ' · unpriced' : ''}</span>
+      <span class="t">${e.ms}ms</span></div>`;
+  }
+  return `<div class="step ${e.ok ? 'tool' : 'tool err'}"><span class="k">${i+1}</span>
+    <span class="k">${e.ok ? 'tool' : 'error'}</span>
+    <span class="d">${esc(e.name)}(${esc(JSON.stringify(e.args))})</span>
+    <span class="t">${e.ms}ms · ${e.bytes}b</span>
+    <span class="preview">${esc(e.preview)}</span></div>`;
 }
 
 async function counters() {
-  try { await readCounters(); } catch (err) { console.error('counters failed', err); }
+  // A console line nobody has open is the same as no error at all. Every
+  // counter is stale until a tick succeeds, and the subtitle is where the
+  // reader is already looking to find out what they are looking at.
+  try { await readCounters(); }
+  catch (err) { $('view-sub').textContent = `counters are stale — ${err.message}`; }
 }
 
 async function readCounters() {
-  const [s, t, g, sys] = await Promise.all(
-    ['/api/stats','/api/tools','/api/guardrails','/api/system'].map(get));
+  // Every read first, every write after. Fetching between assignments left the
+  // counters above a failed panel current and the ones below it showing the
+  // previous tick, with nothing on the page to say which were which.
+  const [s, t, g, sys, mem, cast] = await Promise.all(
+    ['/api/stats','/api/tools','/api/guardrails','/api/system','/api/memory','/api/personas']
+      .map(get));
+  const active = cast.personas.find(p => p.name === cast.active);
+  const built = sys.layers.filter(l => l.status === 'built').length;
   $('c-turns').textContent = s.turns;
   $('c-tools').textContent = t.length;
   $('c-rails').textContent = g.filter(r => r.live).length;
-  const mem = await get('/api/memory');
   $('c-mem').textContent = mem.stats.messages;
-  $('c-facts').textContent = (await get('/api/stats')).facts;
-  const cast = await get('/api/personas');
-  const active = cast.personas.find(p => p.name === cast.active);
+  $('c-facts').textContent = s.facts;
   $('c-personas').textContent = cast.personas.length;
   $('chat-persona').textContent = cast.active;
   const box = document.getElementById('a-mem');
   if (box) box.textContent = mem.stats.messages + ' kept';
-  const built = sys.layers.filter(l => l.status === 'built').length;
   $('c-built').textContent = built + '/15';
   // Was hardcoded to "layer 3 of 15" and never updated. Same source as Growth.
   $('view-sub').textContent = `.ninja/state.db · built through layer ${built} of 15`;

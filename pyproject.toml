@@ -10,6 +10,13 @@ dependencies = [
     "uvicorn>=0.32",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+    "pip-audit>=2.7",
+]
+
 [project.scripts]
 ninja = "ninja.cli:main"
 
@@ -21,3 +28,18 @@ build-backend = "hatchling.build"
 # you import is "ninja". Hatchling can't guess that, so point it at the dir.
 [tool.hatch.build.targets.wheel]
 packages = ["ninja"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# E,F pyflakes+pycodestyle · B bugbear (real bug shapes) · S bandit (security)
+# SIM simplify · UP modern syntax · I import order
+select = ["E", "F", "B", "S", "SIM", "UP", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, and assert is S101.
+"tests/*" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

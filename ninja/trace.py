@@ -8,7 +8,7 @@ slow, which one was wrong, and what the whole thing cost.
 import json
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,7 @@ class Trace:
     def __init__(self, user_input: str):
         self.user_input = user_input
         self.t0 = time.perf_counter()
-        self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        self.started_at = datetime.now(UTC).isoformat(timespec="seconds")
         self.events: list[dict] = []
         self.input_tokens = 0
         self.output_tokens = 0
@@ -138,7 +138,10 @@ def print_one(trace_id: int) -> None:
 
     for i, e in enumerate(json.loads(events), 1):
         if e["type"] == "model":
-            print(f"  {i:>2}. model   {e['ms']:>6}ms  {e['in']:>5} in / {e['out']:<5} out  → {e['stop']}")
+            print(
+                f"  {i:>2}. model   {e['ms']:>6}ms  "
+                f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}"
+            )
         else:
             mark = "ok" if e["ok"] else "ERROR"
             preview = e["preview"].replace("\n", "⏎")[:56]

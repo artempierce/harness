@@ -1,0 +1,50 @@
+name: quality gate
+
+# Runs on every pull request into main. Merging is blocked until it passes and
+# a human approves — see CONTRIBUTING for the flow.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install uv
+        run: pipx install uv
+
+      - name: install dependencies
+        run: uv sync --dev
+
+      - name: tests
+        run: uv run pytest -q
+
+      - name: code smells
+        # E,F correctness · B bug shapes · S security · SIM,UP,I hygiene
+        run: uv run ruff check . --output-format=github
+
+      - name: dependency vulnerabilities
+        run: uv run pip-audit --progress-spinner off --skip-editable
+
+      - name: no committed secrets
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env is tracked — it holds the API key"
+            exit 1
+          fi
+          if git grep -nIE 'sk-ant-[A-Za-z0-9_-]{20,}' -- . ':!.github/**'; then
+            echo "::error::an API key looks committed — revoke it, do not just delete the commit"
+            exit 1
+          fi
+          echo "no secrets found"

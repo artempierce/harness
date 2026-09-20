@@ -42,8 +42,17 @@ def test_path_escape_is_refused():
             tools.run("read_file", {"path": path}, ALL)
 
 
-def test_unknown_tool_raises():
+def test_an_unknown_tool_raises():
+    # Reachable only when the name IS allowed but has no implementation — a
+    # persona file naming a tool that was since renamed or removed.
     with pytest.raises(ValueError, match="unknown tool"):
+        tools.run("rm_rf", {"path": "/"}, ["rm_rf"])
+
+
+def test_an_unlisted_tool_is_refused_before_dispatch():
+    # The gate is the first statement in run(), so a name that is neither
+    # allowed nor implemented is refused as an allowlist violation.
+    with pytest.raises(ValueError, match="allowlist"):
         tools.run("rm_rf", {"path": "/"}, ALL)
 
 

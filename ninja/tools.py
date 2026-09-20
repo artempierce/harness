@@ -75,10 +75,13 @@ def _resolve(path: str) -> Path:
 
 
 def run(name: str, args: dict, allowed: Sequence[str]) -> str:
-    # Check for unknown tools first, then verify the allowlist.
+    # The allowlist is enforced here as well as by filtering the schemas,
+    # because filtering is advisory: a model that has seen a tool name earlier
+    # in the conversation can still emit it. One gate, first — a per-branch
+    # check is fail-open the moment a new tool forgets to repeat it.
+    if name not in allowed:
+        raise ValueError(f"{name} is not in this persona's allowlist")
     if name == "list_files":
-        if name not in allowed:
-            raise ValueError(f"{name} is not in this persona's allowlist")
         entries = _resolve(args["path"]).iterdir()
         return "\n".join(
             sorted(
@@ -88,12 +91,8 @@ def run(name: str, args: dict, allowed: Sequence[str]) -> str:
             )
         )
     if name == "read_file":
-        if name not in allowed:
-            raise ValueError(f"{name} is not in this persona's allowlist")
         return _resolve(args["path"]).read_text()
     if name == "remember":
-        if name not in allowed:
-            raise ValueError(f"{name} is not in this persona's allowlist")
         semantic.remember(args["fact"])
         return f"remembered: {args['fact']}"
     raise ValueError(f"unknown tool: {name}")

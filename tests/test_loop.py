@@ -162,3 +162,15 @@ def test_the_trace_records_which_persona_ran_the_call():
 
     assert turn.events[0]["persona"] == "interview-coach"
     assert turn.events[0]["model"] == "claude-sonnet-5"
+
+
+def test_the_step_cap_leaves_a_transcript_the_next_turn_can_use():
+    # The reply the user was shown has to be in the transcript as well. Without
+    # it the conversation ends on a batch of tool results, and the next message
+    # is appended after them with no assistant turn in between.
+    client = StubClient([tool_call(f"t{i}", "list_files", {"path": "."})
+                         for i in range(agent.MAX_STEPS + 5)])
+    messages = [{"role": "user", "content": "go forever"}]
+    reply = agent.run_turn(client, messages, trace.Trace("x"), a_persona())
+
+    assert messages[-1] == {"role": "assistant", "content": reply}

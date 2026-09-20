@@ -100,7 +100,14 @@ def run_turn(
         # Splitting them teaches the model to stop asking for parallel calls.
         messages.append({"role": "user", "content": results})
 
-    return f"[stopped: hit the {MAX_STEPS}-step guardrail]"
+    # Every other exit appends the assistant message before returning it. This
+    # one used to return a reply the user saw and the transcript never held,
+    # leaving the last message a batch of tool results with no assistant turn
+    # after it — so the next question is asked of a conversation that stops
+    # mid-exchange, and working memory disagrees with what was saved.
+    stopped = f"[stopped: hit the {MAX_STEPS}-step guardrail]"
+    messages.append({"role": "assistant", "content": stopped})
+    return stopped
 
 
 def switch(command: str, current: Persona) -> Persona:

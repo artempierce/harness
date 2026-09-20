@@ -11,10 +11,19 @@ def test_the_page_is_served():
     assert "ninja cockpit" in page.text
 
 
-def test_panels_respond():
+def test_panels_respond_with_data_rather_than_an_error_inside_a_200():
+    # A status code is not an answer. The first dashboard bug in this project
+    # rendered the string "undefined" because fetch does not reject on a 4xx;
+    # an error carried inside a 200 is the same failure one step earlier, and
+    # a test that reads only the status cannot see either. Two panels were
+    # also missing from this list.
     for path in ["/api/stats", "/api/traces", "/api/tools", "/api/guardrails",
-                 "/api/system", "/api/memory"]:
-        assert client.get(path).status_code == 200, path
+                 "/api/system", "/api/memory", "/api/personas", "/api/facts"]:
+        reply = client.get(path)
+        assert reply.status_code == 200, path
+        body = reply.json()
+        assert body is not None, path
+        assert not (isinstance(body, dict) and "error" in body), path
 
 
 def test_tools_panel_matches_the_real_tools():

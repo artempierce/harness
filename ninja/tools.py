@@ -79,7 +79,10 @@ def run(name: str, args: dict, allowed: Sequence[str]) -> str:
     # because filtering is advisory: a model that has seen a tool name earlier
     # in the conversation can still emit it. One gate, first — a per-branch
     # check is fail-open the moment a new tool forgets to repeat it.
-    if name not in allowed:
+    # `str` is a Sequence[str], so an allowlist that arrived flattened into one
+    # string would be tested by substring — granting every tool whose name
+    # appears anywhere in it. Refuse the shape rather than the symptom.
+    if isinstance(allowed, str) or name not in allowed:
         raise ValueError(f"{name} is not in this persona's allowlist")
     if name == "list_files":
         entries = _resolve(args["path"]).iterdir()

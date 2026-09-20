@@ -13,15 +13,15 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, tools, trace
+from ninja import agent, episodic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
 app = FastAPI(title="ninja cockpit")
 
-# One conversation, held in the process. Restart and it's gone — the same
-# amnesia as layer 1, until episodic memory lands at layer 4.
-messages: list = []
+# Seeded from episodic memory at import, so a restart picks the thread back up.
+session = episodic.new_session()
+messages: list = episodic.recall()
 _client: anthropic.Anthropic | None = None
 
 
@@ -52,11 +52,10 @@ def chat(message: Message):
     messages.append({"role": "user", "content": message.text})
     turn = trace.Trace(message.text)
     reply = agent.run_turn(client(), messages, turn)
-    return {
-        "reply": reply,
-        "trace_id": turn.finish(reply),
-        "working_memory": len(messages),
-    }
+    trace_id = turn.finish(reply)
+    episodic.save(session, "user", message.text, trace_id)
+    episodic.save(session, "assistant", reply, trace_id)
+    return {"reply": reply, "trace_id": trace_id, "working_memory": len(messages)}
 
 
 @app.get("/api/traces")
@@ -160,8 +159,13 @@ LAYERS = [
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3}
+BUILT = {1, 2, 3, 4}
 SCAFFOLD = {6}
+
+
+@app.get("/api/memory")
+def memory_panel():
+    return {"stats": episodic.stats(), "history": episodic.history()}
 
 
 @app.get("/api/system")

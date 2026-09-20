@@ -99,6 +99,9 @@
   .chip.read, .chip.live, .chip.built { color: var(--ok); }
   .chip.soon, .chip.planned { color: var(--faint); }
   .chip.scaffold { color: var(--loop); }
+  .row.mem { grid-template-columns: 44px 62px 1fr 64px 74px; cursor: default; align-items: baseline; }
+  .row.mem .who { white-space: normal; }
+  .row.mem.recalled { background: #16202a; }
   .row.growth { grid-template-columns: 34px 1fr auto; cursor: default; }
   .row.growth.planned .who { color: var(--faint); }
 
@@ -136,11 +139,11 @@
   <a data-view="loop">Loop <span class="count" id="c-turns">0</span></a>
   <a data-view="tools">Tools <span class="count" id="c-tools">0</span></a>
   <a data-view="guardrails">Guardrails <span class="count" id="c-rails">0</span></a>
+  <a data-view="memory">Memory <span class="count" id="c-mem">0</span></a>
   <a data-view="growth">Growth <span class="count" id="c-built">0/15</span></a>
   <div class="nav-label">Not built yet</div>
-  <a data-view="soon" data-layer="4">Memory <span class="tag">L4</span></a>
+  <a data-view="soon" data-layer="5">Semantic <span class="tag">L5</span></a>
   <a data-view="soon" data-layer="7">Personas <span class="tag">L7</span></a>
-  <a data-view="soon" data-layer="4">Database <span class="tag">L4</span></a>
   <a data-view="soon" data-layer="11">Testing <span class="tag">L11</span></a>
 </nav>
 
@@ -183,6 +186,7 @@ async function render() {
   if (view === 'loop')       return el.innerHTML = await loop();
   if (view === 'tools')      return el.innerHTML = await toolsView();
   if (view === 'guardrails') return el.innerHTML = await rails();
+  if (view === 'memory')     return el.innerHTML = await memory();
   if (view === 'growth')     return el.innerHTML = await growth();
   if (view === 'soon')       return el.innerHTML = soon();
 }
@@ -205,7 +209,7 @@ async function overview() {
       <div class="box loop"><b>Loop + tools</b><span>${s.tool_calls} calls · cap 6</span></div><div class="arrow">→</div>
       <div class="box harness"><b>Reply</b><span>end-loop guardrail</span></div><div class="arrow">→</div>
       <div class="box ops"><b>Trace</b><span>${s.turns} recorded</span></div><div class="arrow">→</div>
-      <div class="box harness dim"><b>Memory</b><span>layer 4</span></div><div class="arrow">→</div>
+      <div class="box harness"><b>Episodic</b><span id="a-mem">recall ${s.working_memory ? 'on' : 'on'}</span></div><div class="arrow">→</div>
       <div class="box ops dim"><b>Eval</b><span>layer 11</span></div>
     </div>` + await loop();
 }
@@ -242,6 +246,28 @@ async function rails() {
     g.filter(r => r.live).map(card).join('') +
     `<p class="section-label" style="margin-top:24px">Arrives with the capability it constrains</p>` +
     g.filter(r => !r.live).map(card).join('');
+}
+
+async function memory() {
+  const m = await get('/api/memory');
+  const st = m.stats;
+  const tile = (v, l) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`;
+  let out = `<div class="tiles">
+      ${tile(st.messages, 'messages kept')}
+      ${tile(st.sessions, 'sessions')}
+      ${tile(st.recall, 'recalled at start')}
+    </div>
+    <p class="section-label">Episodic — every turn, oldest at the bottom.
+      The top ${st.recall} go back into working memory when Ninja starts.</p>`;
+  if (!m.history.length) return out + `<p class="empty">Nothing remembered yet.</p>`;
+  return out + m.history.map((h, i) =>
+    `<div class="row mem ${i < st.recall ? 'recalled' : ''}">
+       <span class="n">#${h.id}</span>
+       <span class="chip ${h.role === 'user' ? 'soon' : 'live'}">${h.role}</span>
+       <span class="who">${esc(h.content)}</span>
+       <span class="num">${h.created_at.slice(11, 19)}</span>
+       <span class="num">${h.trace_id ? 'trace #' + h.trace_id : ''}</span>
+     </div>`).join('');
 }
 
 async function growth() {
@@ -284,6 +310,10 @@ async function counters() {
   $('c-turns').textContent = s.turns;
   $('c-tools').textContent = t.length;
   $('c-rails').textContent = g.filter(r => r.live).length;
+  const mem = await get('/api/memory');
+  $('c-mem').textContent = mem.stats.messages;
+  const box = document.getElementById('a-mem');
+  if (box) box.textContent = mem.stats.messages + ' kept';
   $('c-built').textContent = sys.layers.filter(l => l.status === 'built').length + '/15';
   $('brand-model').textContent = sys.model;
   $('wm-badge').textContent = 'working memory: ' + s.working_memory;

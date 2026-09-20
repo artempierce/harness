@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import tools
+from ninja import episodic, tools
 from ninja.trace import Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
@@ -85,11 +85,17 @@ def run_turn(client: anthropic.Anthropic, messages: list, trace: Trace) -> str:
 
 def main() -> None:
     client = anthropic.Anthropic()
+    session = episodic.new_session()
 
-    # Still the working memory from layer 1 — it just fills up faster now.
-    messages = []
+    # Working memory no longer starts empty: layer 4 puts recent turns back
+    # before the first round. This is the pattern every memory layer follows —
+    # something decides what goes into the array before the loop runs.
+    messages = episodic.recall()
 
-    print(f"ninja | model={MODEL} | ctrl-d to quit\n")
+    print(f"ninja | model={MODEL} | ctrl-d to quit")
+    if messages:
+        print(f"remembering {len(messages)} earlier messages")
+    print()
 
     while True:
         try:
@@ -104,6 +110,9 @@ def main() -> None:
         trace = Trace(user_input)
         reply = run_turn(client, messages, trace)
         trace_id = trace.finish(reply)
+
+        episodic.save(session, "user", user_input, trace_id)
+        episodic.save(session, "assistant", reply, trace_id)
 
         print(f"\nagent> {reply}")
         print(

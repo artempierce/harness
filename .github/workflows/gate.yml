@@ -28,8 +28,36 @@ jobs:
       - name: install dependencies
         run: uv sync --dev
 
+      # --cov-fail-under lives here rather than in pyproject's addopts, because
+      # there it would also apply to `pytest -m live`, where two tests cover
+      # almost nothing.
+      #
+      # 89 is what the suite measures today, not a target. The table prints a
+      # rounded 90%; the real figure is 89.58%, and --cov-fail-under compares
+      # against the real one, so 90 here would fail the build on the number the
+      # report shows as passing. It is a ratchet against regression: it moves
+      # up deliberately when tests are added, never quietly down.
       - name: tests
-        run: uv run pytest -q
+        run: |
+          set -o pipefail
+          uv run pytest -q --cov-fail-under=89 --cov-report=html --durations=10 \
+            | tee /tmp/pytest.txt
+          {
+            echo '## Tests'
+            echo '```'
+            tail -40 /tmp/pytest.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded even when the step above failed, since a coverage drop is
+      # exactly when you want to click through the report.
+      - name: coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 14
 
       - name: code smells
         # E,F correctness · B bug shapes · S security · SIM,UP,I hygiene

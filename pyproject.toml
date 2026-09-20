@@ -16,6 +16,8 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.8",
     "pip-audit>=2.7",
+    "pytest-cov>=7.1.0",
+    "mutmut>=3.8.0",
 ]
 
 [project.scripts]
@@ -47,5 +49,42 @@ testpaths = ["tests"]
 # The live test is the only one that spends money, so it is deselected here and
 # never runs in the PR gate. The post-merge smoke workflow opts back in with
 # `pytest -m live` — a later -m on the command line wins over this one.
-addopts = "-m 'not live'"
+#
+# Coverage runs on every invocation — the suite stays under two seconds with it.
+# --cov-fail-under is deliberately NOT here: it would fail `pytest -m live`,
+# where two tests cover almost nothing. The threshold belongs to the gate.
+addopts = "-m 'not live' --cov=ninja --cov-report=term-missing:skip-covered"
 markers = ["live: hits the real API — costs real tokens, post-merge only"]
+
+[tool.coverage.run]
+source = ["ninja"]
+
+[tool.coverage.report]
+# `python -m ninja` is a two-line shim around cli.main. Its import runs on
+# every suite; its call would only ever test argparse.
+omit = ["ninja/__main__.py"]
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]
+
+[tool.mutmut]
+# Coverage measures which lines ran. This measures whether anything would
+# notice if they ran differently — the check that catches a test asserting
+# nothing, which is how several tests in this repo looked green while proving
+# nothing. Slow by nature, because the suite runs once per mutant, so it is a
+# manual job and never the pull request gate.
+#
+# mutmut 3.x renamed these. `paths_to_mutate` and `tests_dir` still parse but
+# warn, and both want lists — a string raises a TypeError deep inside the
+# config loader rather than saying so. There is no `runner` key any more;
+# extra pytest arguments go through pytest_add_cli_args instead.
+source_paths = ["ninja/"]
+pytest_add_cli_args_test_selection = ["tests/"]
+# --no-cov because measuring a mutant's coverage is wasted work, and -x so a
+# mutant caught by the first failing test stops there instead of running on.
+# `-m 'not live'` already comes from addopts, so no mutant run spends money.
+pytest_add_cli_args = ["-x", "-q", "--no-cov"]
+# mutmut copies the source tree into mutants/ and runs the suite from there, so
+# anything the code reads from disk has to come along. server.py opens the
+# database at import time, which reads sql/schema.sql; test_personas reads the
+# persona files. Without these the whole run dies during collection, before a
+# single mutant is tried.
+also_copy = ["sql/", "personas/", "ui/"]

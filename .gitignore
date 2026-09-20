@@ -16,3 +16,9 @@ __pycache__/
 # Tool caches write their own .gitignore, so these are belt-and-braces
 .ruff_cache/
 .pytest_cache/
+
+# Coverage output. The number belongs in CI, the HTML is for reading locally.
+.coverage
+htmlcov/
+.mutmut-cache
+mutants/

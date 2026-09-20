@@ -17,14 +17,18 @@ def main() -> None:
         description="Ninja — a personal assistant that is a cast of agents.",
     )
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("dashboard", help="open the cockpit at localhost:7777")
+    cockpit = sub.add_parser("dashboard", help="open the cockpit at localhost:7777")
+    cockpit.add_argument("--port", type=int, default=7777)
     viewer = sub.add_parser("trace", help="what happened on a turn")
     viewer.add_argument("id", nargs="?", type=int, help="a trace id; omit to list recent")
 
     args = parser.parse_args()
 
     if args.command == "dashboard":
-        raise SystemExit("the dashboard arrives at layer 6 — not built yet")
+        from ninja import server  # imported late: needs fastapi, and a key
+
+        server.serve(args.port)
+        return
     if args.command == "trace":
         trace.print_one(args.id) if args.id else trace.print_recent()
         return

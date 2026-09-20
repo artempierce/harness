@@ -3,7 +3,12 @@ name = "ninja-agent"
 version = "0.1.0"
 description = "Ninja — a personal assistant that is a cast of agents, built one layer at a time."
 requires-python = ">=3.11"
-dependencies = ["anthropic>=1.0", "python-dotenv>=1.0"]
+dependencies = [
+    "anthropic>=1.0",
+    "python-dotenv>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+]
 
 [project.scripts]
 ninja = "ninja.cli:main"

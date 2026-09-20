@@ -20,7 +20,7 @@ parts not built yet.
 
 ## Status
 
-Built layer by layer. Six of fifteen so far.
+Built layer by layer. Seven of fifteen so far.
 
 | | Layer | |
 |---|---|---|
@@ -30,7 +30,7 @@ Built layer by layer. Six of fifteen so far.
 | 4 | Episodic memory | ✅ |
 | 5 | Semantic memory + retrieval gate | ✅ |
 | 6 | Dashboard | ✅ |
-| 7 | Personas | — |
+| 7 | Personas | ✅ |
 | 8 | Delegation | — |
 | 9 | The architect — proposals, no write access | — |
 | 10 | Consolidation | — |
@@ -79,6 +79,8 @@ ninja trace         the last 10 turns
 ninja trace 7       one turn, step by step
 ninja dashboard     the browser cockpit → localhost:7777
 ```
+
+In the REPL: `/persona` lists the cast, `/persona <name>` switches.
 
 The cockpit has chat on the right and the system on the left: overview, the
 loop, tools, guardrails, episodic and semantic memory, and a growth panel
@@ -139,7 +141,7 @@ ninja/            the agent — raw Python
   server.py       the cockpit's API
 tests/            33 tests — stubbed model, throwaway db, free and offline
 ninja_lc/         the same system on LangGraph         (layer 12)
-personas/         one PERSONA.md per persona           (layer 7)
+personas/         one PERSONA.md per persona
 sql/              schema, shared by both               (layer 4)
 evals/            test cases, shared by both           (layer 11)
 ui/               the dashboard                        (layer 6)

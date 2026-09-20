@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, semantic, tools, trace
+from ninja import agent, episodic, personas, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
@@ -22,6 +22,10 @@ app = FastAPI(title="ninja cockpit")
 # Seeded from episodic memory at import, so a restart picks the thread back up.
 session = episodic.new_session()
 messages: list = episodic.recall()
+# Which persona an unspecified request defaults to. A *name*, not a resolved
+# Persona: it is read once at the top of a request and immediately turned into
+# a frozen object, so a switch cannot reach a turn already in flight.
+active: str = personas.DEFAULT
 _client: anthropic.Anthropic | None = None
 
 
@@ -40,6 +44,11 @@ def rows_to_dicts(cursor) -> list[dict]:
 
 class Message(BaseModel):
     text: str
+    persona: str | None = None
+
+
+class PersonaName(BaseModel):
+    name: str
 
 
 @app.get("/")
@@ -52,24 +61,42 @@ def index():
 
 @app.post("/api/chat")
 def chat(message: Message):
+    # The persona is resolved once, here, before the loop starts. run_turn is
+    # handed the object; nothing inside the loop reads `active` again.
+    global messages, active
+    try:
+        persona = personas.load(message.persona or active)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     # run_turn appends as it goes. Handing it the live list means a failure
     # mid-loop leaves a tool_use block with no matching tool_result behind, and
     # the API rejects every turn after that until the process restarts. Build
     # the turn on a copy and adopt it only once it has come back whole.
-    global messages
     working = [*messages, {"role": "user", "content": message.text}]
     turn = trace.Trace(message.text)
     try:
         reply = agent.run_turn(
-            client(), working, turn, agent.build_system(message.text, turn)
+            client(), working, turn, persona, agent.build_system(message.text, turn, persona)
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
     messages = working
+    # Only a request that named a persona moves the default. Writing it back on
+    # every turn also undoes a switch that landed while this one was running:
+    # the click is acknowledged, the panel repaints, and then a turn that
+    # started before it quietly puts the old default back.
+    if message.persona:
+        active = persona.name
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id)
     episodic.save(session, "assistant", reply, trace_id)
-    return {"reply": reply, "trace_id": trace_id, "working_memory": len(messages)}
+    return {
+        "reply": reply,
+        "trace_id": trace_id,
+        "working_memory": len(messages),
+        "persona": persona.name,
+    }
 
 
 @app.get("/api/traces")
@@ -155,8 +182,8 @@ def guardrails_panel():
          "stops": "Reading .env into the transcript", "live": True},
         {"name": "Retrieval gate", "value": f"top-{semantic.TOP_K}, stopword-filtered",
          "stops": "Paying context tokens on turns that need no facts", "live": True},
-        {"name": "Tool allowlist", "value": "per persona", "layer": 7,
-         "stops": "The tutor calling run_command", "live": False},
+        {"name": "Tool allowlist", "value": "persona.tools, refused in tools.run",
+         "stops": "The interview coach calling list_files", "live": True},
         {"name": "Depth cap", "value": "MAX_DEPTH", "layer": 8,
          "stops": "A → B → C → A delegation chains", "live": False},
         {"name": "Subset rule", "value": "child ⊆ parent", "layer": 8,
@@ -178,8 +205,45 @@ LAYERS = [
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3, 4, 5, 6}
+BUILT = {1, 2, 3, 4, 5, 6, 7}
 SCAFFOLD = set()
+
+
+@app.get("/api/personas")
+def personas_panel():
+    # A load error here is a broken file on disk, not a broken request. Raising
+    # it as an HTTPException keeps the file and the reason in the response body;
+    # letting it escape would reach the browser as a bare 500 and the panel
+    # would say only that something went wrong.
+    try:
+        cast = personas.all()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {
+        "active": active,
+        "personas": [
+            {
+                "name": p.name,
+                # What layer 8 will route on.
+                "description": p.description,
+                "model": p.model,
+                # Read from the file, so the panel cannot claim a capability
+                # the allowlist does not grant.
+                "tools": list(p.tools),
+            }
+            for p in cast
+        ],
+    }
+
+
+@app.post("/api/persona")
+def set_persona(body: PersonaName):
+    global active
+    try:
+        active = personas.load(body.name).name
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"active": active}
 
 
 @app.get("/api/memory")
@@ -198,14 +262,15 @@ def facts_panel():
 
 @app.get("/api/system")
 def system_panel():
+    # No "model" here. Since layer 7 the model belongs to a persona, and
+    # /api/personas is the one place that reports it — a second copy is how a
+    # panel ends up naming a model no turn has run on.
     return {
-        "model": agent.MODEL,
         "layers": [
             {"n": n, "name": name, "phase": phase,
              "status": "built" if n in BUILT else "scaffold" if n in SCAFFOLD else "planned"}
             for n, name, phase in LAYERS
         ],
-        "personas": [],   # layer 7
         "evals": [],      # layer 11
     }
 

@@ -51,6 +51,10 @@ pass through it.
 `tests/` runs against a throwaway database and a stubbed model, so the suite is
 free and offline. Nothing in it spends money or needs an API key.
 
+[`docs/TESTING.md`](docs/TESTING.md) is the test plan: what each file is
+responsible for, what the stubs hide, the anti-patterns to avoid, and the rule
+for the two tests that cost money.
+
 Security tests in `tests/test_tools.py` — the path boundary and the hidden-file
 refusal — must never be relaxed to make a feature work. If a feature needs them
 changed, that is the discussion, not the workaround.

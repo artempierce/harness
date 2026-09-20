@@ -5,6 +5,9 @@ import pytest
 
 from ninja import tools
 
+# Every tool. Tests that are not about the allowlist pass this.
+ALL = tuple(s["name"] for s in tools.SCHEMAS)
+
 
 def test_schemas_are_well_formed():
     for schema in tools.SCHEMAS:
@@ -16,9 +19,9 @@ def test_schemas_are_well_formed():
 
 
 def test_list_and_read_work():
-    listing = tools.run("list_files", {"path": "."})
+    listing = tools.run("list_files", {"path": "."}, ALL)
     assert "pyproject.toml" in listing
-    assert "[project]" in tools.run("read_file", {"path": "pyproject.toml"})
+    assert "[project]" in tools.run("read_file", {"path": "pyproject.toml"}, ALL)
 
 
 def test_hidden_files_are_refused():
@@ -26,19 +29,100 @@ def test_hidden_files_are_refused():
     # and gets sent to the API on the next turn.
     for path in [".env", ".git/config", "ninja/../.env"]:
         with pytest.raises(ValueError, match="hidden files"):
-            tools.run("read_file", {"path": path})
+            tools.run("read_file", {"path": path}, ALL)
 
 
 def test_listing_hides_dotfiles():
-    assert ".env" not in tools.run("list_files", {"path": "."}).split("\n")
+    assert ".env" not in tools.run("list_files", {"path": "."}, ALL).split("\n")
 
 
 def test_path_escape_is_refused():
     for path in ["../../../etc/passwd", "/etc/passwd", "ninja/../../.."]:
         with pytest.raises(ValueError):
-            tools.run("read_file", {"path": path})
+            tools.run("read_file", {"path": path}, ALL)
 
 
-def test_unknown_tool_raises():
+def test_an_unknown_tool_raises():
+    # Reachable only when the name IS allowed but has no implementation — a
+    # persona file naming a tool that was since renamed or removed.
     with pytest.raises(ValueError, match="unknown tool"):
-        tools.run("rm_rf", {"path": "/"})
+        tools.run("rm_rf", {"path": "/"}, ["rm_rf"])
+
+
+def test_an_unlisted_tool_is_refused_before_dispatch():
+    # The gate is the first statement in run(), so a name that is neither
+    # allowed nor implemented is refused as an allowlist violation.
+    with pytest.raises(ValueError, match="allowlist"):
+        tools.run("rm_rf", {"path": "/"}, ALL)
+
+
+def test_a_tool_outside_the_allowlist_is_refused():
+    # The second enforcement point. The first is that the model was never
+    # shown this tool; this catches the name it guessed anyway.
+    with pytest.raises(ValueError, match="allowlist"):
+        tools.run("remember", {"fact": "x"}, allowed=["read_file"])
+
+
+def test_an_allowed_tool_still_runs():
+    assert "pyproject.toml" in tools.run("list_files", {"path": "."}, allowed=ALL)
+
+
+def test_an_empty_allowlist_grants_nothing():
+    # A persona may hold no tools at all, and "nothing allowed" must not be
+    # read as "no restriction". `if allowed and name not in allowed` is the
+    # one-word version of this bug, and it fails open for every tool at once.
+    # Arguments are omitted deliberately: the gate has to refuse before it
+    # looks at them, or the refusal depends on the model's spelling.
+    for schema in tools.SCHEMAS:
+        with pytest.raises(ValueError, match="allowlist"):
+            tools.run(schema["name"], {}, allowed=[])
+
+
+def test_a_refused_tool_never_reaches_its_side_effect():
+    # Raising is not the claim. The claim is that nothing happened — a gate
+    # moved below the dispatch would still raise, after the fact was stored.
+    from ninja import semantic
+
+    with pytest.raises(ValueError, match="allowlist"):
+        tools.run("remember", {"fact": "the allowlist leaked"}, allowed=["read_file"])
+    assert semantic.count() == 0
+
+
+def test_an_allowlist_flattened_into_a_string_grants_nothing():
+    # `str` is a Sequence[str], so `name in allowed` becomes a substring test.
+    # A tools list that arrived as text rather than a list would then grant
+    # every tool whose name appears anywhere in it — silently, and looking
+    # exactly like a correct allowlist.
+    for allowed in ["read_file", "list_files, read_file, remember"]:
+        with pytest.raises(ValueError, match="allowlist"):
+            tools.run("read_file", {"path": "pyproject.toml"}, allowed=allowed)
+
+
+def test_list_files_enforces_the_same_boundary_as_read_file():
+    # Only read_file's boundary was covered. Listing a directory leaks its
+    # names, which is how you find out what is worth reading next, and a
+    # listing of .git or of / is a disclosure in its own right.
+    for path in [".git", ".ninja", "../..", "/etc", "ninja/../.ninja"]:
+        with pytest.raises(ValueError):
+            tools.run("list_files", {"path": path}, ALL)
+
+
+def test_a_symlink_out_of_the_project_is_refused(tmp_path, monkeypatch):
+    # The boundary is checked on the resolved path, so a link is followed
+    # before it is judged. A check against the typed string would pass this.
+    root = tmp_path.resolve()
+    monkeypatch.setattr(tools, "ROOT", root)
+    (root / "shortcut").symlink_to("/etc")
+    with pytest.raises(ValueError, match="escapes"):
+        tools.run("list_files", {"path": "shortcut"}, ALL)
+
+
+def test_a_symlink_to_a_hidden_file_is_refused(tmp_path, monkeypatch):
+    # The same point for the .env rule, which is the one that holds the API
+    # key. `config.txt` has no dot in it anywhere; what it points at does.
+    root = tmp_path.resolve()
+    monkeypatch.setattr(tools, "ROOT", root)
+    (root / ".env").write_text("ANTHROPIC_API_KEY=not-a-real-key")
+    (root / "config.txt").symlink_to(root / ".env")
+    with pytest.raises(ValueError, match="hidden files"):
+        tools.run("read_file", {"path": "config.txt"}, ALL)

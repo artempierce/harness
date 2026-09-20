@@ -4,6 +4,7 @@ SCHEMAS is what the model sees — it picks a tool by reading these descriptions
 run() is what actually happens. The model never executes anything itself.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from ninja import semantic
@@ -73,7 +74,16 @@ def _resolve(path: str) -> Path:
     return target
 
 
-def run(name: str, args: dict) -> str:
+def run(name: str, args: dict, allowed: Sequence[str]) -> str:
+    # The allowlist is enforced here as well as by filtering the schemas,
+    # because filtering is advisory: a model that has seen a tool name earlier
+    # in the conversation can still emit it. One gate, first — a per-branch
+    # check is fail-open the moment a new tool forgets to repeat it.
+    # `str` is a Sequence[str], so an allowlist that arrived flattened into one
+    # string would be tested by substring — granting every tool whose name
+    # appears anywhere in it. Refuse the shape rather than the symptom.
+    if isinstance(allowed, str) or name not in allowed:
+        raise ValueError(f"{name} is not in this persona's allowlist")
     if name == "list_files":
         entries = _resolve(args["path"]).iterdir()
         return "\n".join(

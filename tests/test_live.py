@@ -13,7 +13,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from ninja import agent, server
+from ninja import server
 
 pytestmark = pytest.mark.live
 
@@ -31,9 +31,15 @@ def test_a_real_turn_completes():
 
 
 @pytest.mark.skipif(not os.environ.get("ANTHROPIC_API_KEY"), reason="no API key")
-def test_the_configured_model_id_still_exists():
-    # Cheaper than a turn and the likelier breakage: ids get retired, and the
-    # failure mode is every chat 404ing with nothing in the suite to catch it.
+def test_every_persona_names_a_model_that_exists():
+    # Cheaper than a turn, and the likelier breakage: model ids get retired and
+    # the failure mode is every chat 404ing with nothing in the suite to catch
+    # it. Since layer 7 the model is per-persona, so every persona is checked —
+    # including any the agent authors itself from layer 9.
     import anthropic
 
-    assert anthropic.Anthropic().models.retrieve(agent.MODEL).id
+    from ninja import personas
+
+    client = anthropic.Anthropic()
+    for persona in personas.all():
+        assert client.models.retrieve(persona.model).id, persona.name

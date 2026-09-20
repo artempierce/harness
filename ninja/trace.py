@@ -48,7 +48,7 @@ class Trace:
         self.output_tokens = 0
         self.cost = 0.0
 
-    def model(self, model: str, response, ms: int) -> None:
+    def model(self, model: str, response, ms: int, persona: str | None = None) -> None:
         used = response.usage
         self.input_tokens += used.input_tokens
         self.output_tokens += used.output_tokens
@@ -56,10 +56,20 @@ class Trace:
         self.events.append(
             {
                 "type": "model",
+                # Since layer 7 both of these vary per turn, so a trace that
+                # records neither cannot answer what the coach cost, or which
+                # persona made the call that went wrong.
+                "model": model,
+                "persona": persona,
                 "ms": ms,
                 "in": used.input_tokens,
                 "out": used.output_tokens,
                 "stop": response.stop_reason,
+                # PRICING is keyed by model id and a persona names whatever
+                # model it likes. An unpriced one adds nothing to the total,
+                # which on the dashboard is indistinguishable from a turn that
+                # was free — so the absence is recorded rather than rounded off.
+                "unpriced": model not in PRICING,
             }
         )
 
@@ -148,9 +158,13 @@ def print_one(trace_id: int) -> None:
             verdict = f"retrieve {e['hits']}" if e["retrieve"] else "skip"
             print(f"  {i:>2}. gate      {verdict:<12} {e['why']}")
         elif e["type"] == "model":
+            # .get throughout: rows written before these fields existed are
+            # still in the database and still have to print.
+            ran_as = " ".join(x for x in (e.get("persona"), e.get("model")) if x)
+            flag = "  [unpriced — not in the total]" if e.get("unpriced") else ""
             print(
                 f"  {i:>2}. model   {e['ms']:>6}ms  "
-                f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}"
+                f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}  {ran_as}{flag}"
             )
         else:
             mark = "ok" if e["ok"] else "ERROR"

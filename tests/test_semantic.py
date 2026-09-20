@@ -1,4 +1,4 @@
-from ninja import semantic, tools
+from ninja import agent, semantic, tools, trace
 
 from .conftest import a_persona
 
@@ -41,7 +41,14 @@ def test_query_survives_punctuation():
     # Apostrophes and dashes are FTS5 syntax, not text. Raw input would raise.
     facts("Sol worked at Sam's Club")
     for text in ["what's Sol's job?", "tell me -- anything", 'a "quoted" thing', "!!!"]:
-        semantic.gate(text)
+        retrieve, why, hits = semantic.gate(text)
+        # Not raising is half of it. The other half is that the punctuation was
+        # stripped rather than swallowing the words around it.
+        assert isinstance(retrieve, bool)
+        assert why
+        assert retrieve == bool(hits)
+    assert semantic.gate("what's Sol's job?")[0] is True
+    assert semantic.gate("!!!")[1] == "no fact matched"
 
 
 def test_remember_tool_stores_a_fact():
@@ -53,7 +60,6 @@ def test_remember_tool_stores_a_fact():
 
 
 def test_retrieved_facts_reach_the_system_prompt():
-    from ninja import agent, trace
     facts("Sol is building an agent harness called Ninja")
     turn = trace.Trace("x")
     prompt = agent.build_system("what am I building?", turn, a_persona())
@@ -63,7 +69,6 @@ def test_retrieved_facts_reach_the_system_prompt():
 
 
 def test_a_skip_is_recorded_as_a_decision():
-    from ninja import agent, trace
     facts("Sol is building an agent harness called Ninja")
     turn = trace.Trace("x")
     prompt = agent.build_system("what is 2 + 2?", turn, a_persona())

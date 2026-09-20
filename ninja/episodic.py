@@ -10,7 +10,7 @@ you read yesterday is stale today.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ninja.trace import connect
 
@@ -33,7 +33,7 @@ def save(session_id: str, role: str, content: str, trace_id: int | None = None) 
             session_id,
             role,
             content,
-            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            datetime.now(UTC).isoformat(timespec="seconds"),
             trace_id,
         ),
     )
@@ -65,7 +65,7 @@ def history(limit: int = 50) -> list[dict]:
     ).fetchall()
     conn.close()
     keys = ("id", "session_id", "role", "content", "created_at", "trace_id")
-    return [dict(zip(keys, row)) for row in rows]
+    return [dict(zip(keys, row, strict=True)) for row in rows]
 
 
 def stats() -> dict:

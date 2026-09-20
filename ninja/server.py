@@ -35,7 +35,7 @@ def client() -> anthropic.Anthropic:
 
 def rows_to_dicts(cursor) -> list[dict]:
     keys = [c[0] for c in cursor.description]
-    return [dict(zip(keys, row)) for row in cursor.fetchall()]
+    return [dict(zip(keys, row, strict=True)) for row in cursor.fetchall()]
 
 
 class Message(BaseModel):

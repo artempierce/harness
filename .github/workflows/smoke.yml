@@ -4,9 +4,16 @@ name: post-merge smoke
 # pull request. This one costs real tokens, so it runs only after a merge has
 # landed on main — the point is to find out that the real API still answers,
 # not to block a review on it.
+# Manual only, for now. There is no ANTHROPIC_API_KEY secret on this repo yet
+# and the live turn is being run locally instead. To put it back on every merge,
+# add the secret and restore:
+#
+#   push:
+#     branches: [main]
+#
+# Fork pull requests never receive secrets, so opening this up does not expose
+# the key to contributors — only a merge to main would run it.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -29,9 +36,20 @@ jobs:
       - name: install dependencies
         run: uv sync --dev
 
+      # Without the secret the live tests skip rather than fail, so a run
+      # before the key is configured is green and says why.
+      - name: is the key configured?
+        id: key
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::notice::no ANTHROPIC_API_KEY secret — the live ping will skip"
+          fi
+
       - name: live ping
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         # One turn on the cheapest model. -m live overrides the default
         # deselection in pyproject.
-        run: uv run pytest -m live -q
+        run: uv run pytest -m live -q -rs

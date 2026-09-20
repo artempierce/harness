@@ -1,5 +1,7 @@
 """The loop. These tests are why layer 2 can be trusted without spending money."""
 
+import pytest
+
 from ninja import agent, trace
 
 from .conftest import StubClient, a_persona, block, response
@@ -138,3 +140,25 @@ def test_two_personas_in_one_turn_do_not_share_state():
     assert [t["name"] for t in c2.seen[0]["tools"]] == ["remember"]
     assert c1.seen[0]["model"] == "m-a"
     assert c2.seen[0]["model"] == "m-b"
+
+
+def test_a_harness_bug_is_not_disguised_as_a_tool_error(monkeypatch):
+    # A wrong signature or a bug inside a tool is ours, not the model's. Filed
+    # as a tool_result it is indistinguishable from a tool legitimately
+    # refusing, and the loop carries on around it.
+    def broken(name, args, allowed):
+        raise TypeError("run() got an unexpected keyword argument 'depth'")
+
+    monkeypatch.setattr(agent.tools, "run", broken)
+    client = StubClient([tool_call("t1", "list_files", {"path": "."}), text("done")])
+    with pytest.raises(TypeError):
+        agent.run_turn(client, [{"role": "user", "content": "x"}], trace.Trace("x"), a_persona())
+
+
+def test_a_missing_argument_is_still_the_models_mistake():
+    # The other side of the same boundary: the model omitted a required field,
+    # which it can see and correct, so it comes back as a result not a crash.
+    client = StubClient([tool_call("t1", "read_file", {}), text("Sorry, my mistake.")])
+    messages = [{"role": "user", "content": "read it"}]
+    assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "Sorry, my mistake."
+    assert messages[2]["content"][0]["is_error"] is True

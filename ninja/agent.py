@@ -80,9 +80,16 @@ def run_turn(
                 continue
             print(f"  ↳ {block.name}({block.input})")
             started = time.perf_counter()
+            # Only the ways a model-supplied name or argument can be wrong: a
+            # refusal or a bad path (ValueError), a missing required argument
+            # (KeyError), a path that is not there or not readable (OSError).
+            # Those are the model's mistakes and belong back in the transcript
+            # for it to explain. Anything else — a wrong signature, a bug in a
+            # tool — is ours, and catching it here would file it as an ordinary
+            # tool error that looks exactly like a legitimate refusal.
             try:
                 output, failed = tools.run(block.name, block.input, persona.tools), False
-            except Exception as exc:
+            except (ValueError, KeyError, OSError) as exc:
                 output, failed = str(exc), True
             trace.tool(block.name, block.input, not failed, output, ms_since(started))
             results.append(

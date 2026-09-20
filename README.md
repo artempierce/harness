@@ -47,8 +47,8 @@ Built layer by layer. Six of fifteen so far.
 Requires [uv](https://docs.astral.sh/uv/) and an Anthropic API key.
 
 ```bash
-git clone git@github.com:artempierce/harness.git
-cd harness
+git clone git@github.com:artempierce/ninja-agent.git
+cd ninja-agent
 cp .env.example .env        # then paste your key into .env
 ```
 

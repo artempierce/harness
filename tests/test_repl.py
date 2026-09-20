@@ -66,3 +66,20 @@ def test_one_broken_persona_file_does_not_end_the_session(tmp_path, monkeypatch,
 
     assert agent.switch("/persona", started) is started
     assert "frontmatter" in capsys.readouterr().out
+
+
+def test_a_persona_file_with_broken_yaml_does_not_end_the_session(tmp_path, monkeypatch, capsys):
+    # The same containment as above, for the malformation that does not come
+    # out of the loader's own checks. yaml raises its own error type, and a
+    # `/persona` listing that lets it through ends the REPL with the transcript
+    # in it.
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    broken = tmp_path / "unclosed"
+    broken.mkdir()
+    (broken / "PERSONA.md").write_text(
+        "---\nname: unclosed\ndescription: [oops\ntools: [read_file]\nmodel: m\n---\n\nbody\n"
+    )
+    started = personas.load("assistant")
+
+    assert agent.switch("/persona", started) is started
+    assert "YAML" in capsys.readouterr().out

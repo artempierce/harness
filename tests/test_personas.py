@@ -112,3 +112,81 @@ def test_a_name_that_disagrees_with_its_directory_is_refused(tmp_path, monkeypat
            "name: interview-coach\ndescription: d\ntools: [read_file]\nmodel: m\n")
     with pytest.raises(ValueError, match="directory"):
         personas.load("coach")
+
+
+def test_invalid_yaml_arrives_as_the_error_every_caller_catches(tmp_path, monkeypatch):
+    # An unclosed bracket is the likeliest way a PERSONA.md is wrong, and yaml
+    # reports it as a YAMLError — which is not a ValueError, so it sails past
+    # `except ValueError` at both call sites that exist to contain it. The
+    # loader's care in naming the file is worth nothing if the error it raises
+    # is not the one anybody is catching.
+    _write(tmp_path, monkeypatch, "unclosed",
+           "name: unclosed\ndescription: [oops\ntools: [read_file]\nmodel: m\n")
+    with pytest.raises(ValueError, match="valid YAML"):
+        personas.load("unclosed")
+
+
+def test_frontmatter_that_is_not_a_mapping_is_refused(tmp_path, monkeypatch):
+    # `- name` is valid YAML and a list. Everything after the parse indexes it
+    # by key, so a non-mapping either raises a TypeError from inside the loader
+    # or — for a set or a string — reads as a bag of characters that happens to
+    # answer `in`.
+    for name, frontmatter in [("listy", "- name\n- description\n"),
+                              ("scalar", "just a sentence\n")]:
+        _write(tmp_path, monkeypatch, name, frontmatter)
+        with pytest.raises(ValueError, match="mapping"):
+            personas.load(name)
+
+
+def test_a_required_key_with_no_value_is_refused(tmp_path, monkeypatch):
+    # `model:` with nothing after it is a key that is present and holds None, so
+    # a check for missing keys passes it. The persona then loads, lists in the
+    # cockpit looking complete, and fails at the API on every single turn with
+    # nothing in the error naming the file that caused it.
+    _write(tmp_path, monkeypatch, "blank",
+           "name: blank\ndescription: d\ntools: [read_file]\nmodel:\n")
+    with pytest.raises(ValueError, match="empty"):
+        personas.load("blank")
+
+
+def test_a_persona_name_cannot_walk_out_of_the_personas_directory(tmp_path, monkeypatch):
+    # The name is not a label, it is a path segment — and it arrives from a chat
+    # request body, a /persona line and the cockpit's switcher. A relative path
+    # in it reads a PERSONA.md from anywhere on disk, and the name check does
+    # not stop it: the file simply declares the traversal as its own name.
+    monkeypatch.setattr(personas, "DIR", tmp_path / "personas")
+    (tmp_path / "personas").mkdir()
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside" / "PERSONA.md").write_text(
+        "---\nname: ../outside\ndescription: a persona that is not in the cast\n"
+        "tools: [read_file, remember]\nmodel: claude-haiku-4-5\n---\n\nbody\n"
+    )
+    for name in ["../outside", "/etc", "../../etc/passwd", ".", ".."]:
+        with pytest.raises(ValueError, match="not a path"):
+            personas.load(name)
+
+
+def test_every_persona_on_disk_names_a_model_the_harness_can_price():
+    # cost_usd is computed from trace.PRICING, keyed by model id, so a persona
+    # naming a model that is not in it adds exactly zero to the dashboard's
+    # total — indistinguishable from a turn that was free, and at layer 15 a
+    # cost ceiling with a hole in it. This is the free half of the live
+    # model-id check: it cannot say the id still exists at the API, only that
+    # the harness can bill what it runs.
+    from ninja import trace
+
+    for persona in personas.all():
+        assert persona.model in trace.PRICING, persona.name
+
+
+def test_the_fallback_assistant_agrees_with_the_one_on_disk(tmp_path, monkeypatch):
+    # Two sources for one fact. With personas/ absent the harness runs the
+    # constants in personas.py instead of the file, so a model or tool list
+    # that drifts between them means the no-personas path quietly runs a
+    # different assistant. (The instructions already differ, deliberately —
+    # the file says when to use `remember` and the constant does not.)
+    on_disk = personas.load("assistant")
+    monkeypatch.setattr(personas, "DIR", tmp_path / "does-not-exist")
+    fallback = personas.load(personas.DEFAULT)
+    assert fallback.model == on_disk.model
+    assert sorted(fallback.tools) == sorted(on_disk.tools)

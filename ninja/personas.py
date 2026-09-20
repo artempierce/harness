@@ -52,10 +52,25 @@ def _parse(text: str, source: Path) -> Persona:
     if not text.lstrip().startswith("---"):
         raise ValueError(f"{source}: no frontmatter — a PERSONA.md starts with ---")
     _, frontmatter, body = text.lstrip().split("---", 2)
-    meta = yaml.safe_load(frontmatter) or {}
+    # A syntax error in the frontmatter is a YAMLError, which is not a
+    # ValueError — so it sails straight past every caller that catches one and
+    # takes the REPL down mid-conversation, or reaches the browser as a bare
+    # 500. Every way a PERSONA.md can be wrong has to arrive the same way.
+    try:
+        meta = yaml.safe_load(frontmatter) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{source}: frontmatter is not valid YAML — {exc}") from exc
+    if not isinstance(meta, dict):
+        raise ValueError(f"{source}: frontmatter is not a mapping of {sorted(REQUIRED)}")
     missing = REQUIRED - set(meta)
     if missing:
         raise ValueError(f"{source}: frontmatter is missing {sorted(missing)}")
+    # `model:` with nothing after it is a present key holding None, so the
+    # check above passes and the persona loads with model=None — listed in the
+    # cockpit, and failing at the API on every turn with nothing naming the file.
+    blank = sorted(k for k in REQUIRED - {"tools"} if not str(meta[k] or "").strip())
+    if blank:
+        raise ValueError(f"{source}: frontmatter {blank} is present but empty")
     # A tool list is the persona's capability grant, so a mistake in it has to
     # be an error rather than a quiet subtraction. `tools: read_file` without
     # the brackets is a string, and tuple() would shred it into single letters;
@@ -91,6 +106,11 @@ def _fallback() -> Persona:
 
 
 def load(name: str) -> Persona:
+    # The name indexes a directory, and it arrives from a chat request body, a
+    # /persona line and the cockpit's switcher. Anything with a path in it
+    # reads a PERSONA.md from outside personas/ altogether.
+    if name != Path(name).name or name.startswith("."):
+        raise ValueError(f"a persona name is a directory name, not a path: {name!r}")
     path = DIR / name / "PERSONA.md"
     if not path.exists():
         if name == DEFAULT:

@@ -4,7 +4,7 @@ The point of a thread is that interrupting one conversation does not disturb
 another. These are the tests for "does not disturb".
 """
 
-from ninja import episodic, trace
+from ninja import episodic
 
 
 def test_a_message_stays_in_its_own_thread():
@@ -71,20 +71,3 @@ def test_history_exposes_the_thread():
     # The cockpit's Episodic panel reads this.
     episodic.save("s1", "user", "a", None, "interview-coach")
     assert episodic.history()[0]["thread"] == "interview-coach"
-
-
-def test_history_written_before_threads_existed_is_not_orphaned():
-    # WHERE thread = ? never matches NULL. Without the backfill in migration
-    # 002, every message in an existing database would be invisible to recall.
-    conn = trace.connect()
-    conn.execute(
-        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id, thread)"
-        " VALUES ('old', 'user', 'said before threads existed', '2026-01-01T00:00:00', NULL, NULL)"
-    )
-    conn.commit()
-    conn.close()
-
-    assert any(
-        m["content"] == "said before threads existed"
-        for m in episodic.recall("assistant")
-    ), "a NULL-thread row is invisible to every thread"

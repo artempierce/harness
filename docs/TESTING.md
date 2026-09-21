@@ -61,11 +61,15 @@ Written down because an unlisted gap is a gap somebody assumes is filled.
   half-stale counters — was invisible to the suite and will be again. The
   Python-side mitigation is that `ninja trace <id>` renders the same three event
   kinds and now has a test; the browser does not.
-- **Migration.** `trace.connect()` runs `sql/schema.sql` on every connection and
-  every statement in it is `CREATE TABLE IF NOT EXISTS`. Tests always get a new
-  database, so a column added to that file always exists in tests and **never**
-  reaches an existing `.ninja/state.db`. The suite cannot fail on this. It is
-  the single biggest thing standing between this repo and layer 8.
+- ~~**Migration.**~~ Covered since `tests/test_migrations.py`. `sql/schema.sql`
+  is now frozen at its original shape and every change is a numbered file in
+  `sql/migrations/`, applied when `PRAGMA user_version` is behind. A fresh
+  database replays the whole chain rather than being shortcut to the current
+  shape, so every test run exercises every migration — the property that stops
+  this gap reopening. The guard against it reopening by another route is
+  `test_the_frozen_schema_does_not_carry_migrated_columns`: adding a column to
+  `schema.sql` instead of writing a migration looks like it works and silently
+  does nothing for databases that already exist.
 - **Concurrency.** `server.messages` and `server.active` are module globals
   written from a threadpool. `TestClient` calls are sequential, so no test here
   can catch a race. Deliberate, per the layer 7 critique: the fix is a
@@ -106,9 +110,18 @@ is what keeps it honest.
 FTS5, real bm25 — the queries are genuinely exercised, not mocked — and no test
 can see another's rows.
 
-**It hides migration and scale**, both described above. A fresh database means
-the schema is always current, which is exactly the condition under which the
-missing migration mechanism is invisible.
+**It hides scale**, described above.
+
+It used to hide migration too, and the fix for that is worth knowing about
+because it is not a fixture. `ninja/server.py` opens the database at *import*
+time — `messages = episodic.recall()` at module level — and pytest imports test
+modules during collection, before any fixture runs. So importing
+`tests/test_server.py` reached the real `.ninja/state.db`. That was harmless
+while `connect()` only ran `CREATE TABLE IF NOT EXISTS`; once it also ran
+migrations, collecting the suite would migrate the developer's own database.
+`conftest.py` therefore redirects `trace.DB` at **import**, not in a fixture,
+and the autouse fixture still gives each test its own file. Fixtures cannot
+protect against something that happens before fixtures.
 
 ### The frozen `Persona` — `a_persona()`
 

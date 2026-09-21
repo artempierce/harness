@@ -72,13 +72,34 @@ def test_missing_keys_name_what_is_missing(tmp_path, monkeypatch):
         personas.load("thin")
 
 
-def test_a_missing_personas_dir_falls_back_to_layer_6_behaviour(tmp_path, monkeypatch):
-    # The harness must start even with no personas/ directory at all.
+def test_a_missing_personas_dir_falls_back_read_only_and_says_so(tmp_path, monkeypatch):
+    # The harness must start even with no personas/ directory at all. But the
+    # fallback stands in for a persona whose tool restrictions are gone, so it
+    # gets the least it needs to be useful — reading — and it says so, rather
+    # than quietly handing the model every tool.
     monkeypatch.setattr(personas, "DIR", tmp_path / "does-not-exist")
-    fallback = personas.load(personas.DEFAULT)
+    with pytest.warns(RuntimeWarning, match="personas"):
+        fallback = personas.load(personas.DEFAULT)
     assert fallback.name == personas.DEFAULT
-    assert len(fallback.schemas()) == len(tools.SCHEMAS)
+    assert set(fallback.tools) == {"list_files", "read_file"}
     assert fallback.model == personas.DEFAULT_MODEL
+
+
+def test_a_deleted_default_persona_also_falls_back_read_only_and_says_so(tmp_path, monkeypatch):
+    # personas/ exists and other personas load, but assistant/ is gone — the
+    # same lost restrictions, reached by a different path.
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    (tmp_path / "other").mkdir()
+    with pytest.warns(RuntimeWarning, match="personas"):
+        fallback = personas.load(personas.DEFAULT)
+    assert set(fallback.tools) == {"list_files", "read_file"}
+
+
+def test_an_empty_personas_dir_falls_back_read_only_and_says_so(tmp_path, monkeypatch):
+    monkeypatch.setattr(personas, "DIR", tmp_path)
+    with pytest.warns(RuntimeWarning, match="personas"):
+        cast = personas.all()
+    assert [set(p.tools) for p in cast] == [{"list_files", "read_file"}]
 
 
 def _write(tmp_path, monkeypatch, name, frontmatter):
@@ -179,14 +200,16 @@ def test_every_persona_on_disk_names_a_model_the_harness_can_price():
         assert persona.model in trace.PRICING, persona.name
 
 
-def test_the_fallback_assistant_agrees_with_the_one_on_disk(tmp_path, monkeypatch):
+def test_the_fallback_is_never_wider_than_the_assistant_on_disk(tmp_path, monkeypatch):
     # Two sources for one fact. With personas/ absent the harness runs the
-    # constants in personas.py instead of the file, so a model or tool list
-    # that drifts between them means the no-personas path quietly runs a
-    # different assistant. (The instructions already differ, deliberately —
-    # the file says when to use `remember` and the constant does not.)
+    # constants in personas.py instead of the file. The model must not drift,
+    # and the tools may only ever be a subset: a fallback that could do more
+    # than the persona it replaces is the fail-open this guards against. (The
+    # instructions already differ, deliberately — the file says when to use
+    # `remember` and the constant does not.)
     on_disk = personas.load("assistant")
     monkeypatch.setattr(personas, "DIR", tmp_path / "does-not-exist")
-    fallback = personas.load(personas.DEFAULT)
+    with pytest.warns(RuntimeWarning):
+        fallback = personas.load(personas.DEFAULT)
     assert fallback.model == on_disk.model
-    assert sorted(fallback.tools) == sorted(on_disk.tools)
+    assert set(fallback.tools) <= set(on_disk.tools)

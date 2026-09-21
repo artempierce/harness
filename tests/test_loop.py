@@ -196,3 +196,24 @@ def test_a_reply_with_no_text_is_not_returned_empty():
 
     assert reply.strip() != ""
     assert "end_turn" in reply
+
+
+@pytest.mark.parametrize("reason", ["max_tokens", "refusal", "pause_turn"])
+def test_an_abnormal_stop_is_marked_not_passed_off_as_a_finished_reply(reason):
+    # A reply cut off at the token cap, refused, or paused reads as a complete
+    # answer if the text alone is returned — and it is saved and replayed as
+    # one. The reason has to be in the text the user and the thread see.
+    client = StubClient([response([block(type="text", text="The answer is")], reason)])
+    messages = [{"role": "user", "content": "what is it?"}]
+    reply = agent.run_turn(client, messages, trace.Trace("x"), a_persona())
+
+    assert reply.startswith("The answer is")
+    assert reason in reply
+
+
+@pytest.mark.parametrize("reason", ["end_turn", "stop_sequence"])
+def test_a_normal_stop_is_returned_unmarked(reason):
+    client = StubClient([response([block(type="text", text="Done.")], reason)])
+    messages = [{"role": "user", "content": "hi"}]
+
+    assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "Done."

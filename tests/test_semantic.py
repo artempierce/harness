@@ -76,3 +76,23 @@ def test_a_skip_is_recorded_as_a_decision():
     # A skip must be visible in the trace — an absence would be invisible.
     assert turn.events[0]["retrieve"] is False
     assert turn.events[0]["why"]
+
+
+def test_a_retrieval_error_degrades_to_no_facts_not_a_failed_turn(monkeypatch):
+    # Facts are optional context. A locked or corrupt database must cost the
+    # turn its memory, not the turn — and the trace must say which, so an error
+    # cannot be mistaken for a real miss.
+    import sqlite3
+
+    def broken(text):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(semantic, "gate", broken)
+    turn = trace.Trace("x")
+
+    prompt = agent.build_system("what am I building?", turn, a_persona())
+
+    assert "What you know about this person" not in prompt
+    assert turn.events[0]["type"] == "gate"
+    assert turn.events[0]["retrieve"] is False
+    assert "retrieval error" in turn.events[0]["why"]

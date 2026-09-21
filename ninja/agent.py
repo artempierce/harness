@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import episodic, personas, router, semantic, tools
+from ninja import episodic, personas, router, rules, semantic, tools
 from ninja.personas import Persona
 from ninja.trace import Trace
 
@@ -37,11 +37,15 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
     """
     retrieve, why, hits = semantic.gate(user_input)
     trace.gate(retrieve, why, len(hits))
+    system = persona.instructions
+    learned = rules.rules_for(persona.name)
+    if learned:
+        system += (
+            "\n\nRules you have learned about how this person wants you to behave:\n" + learned
+        )
     if not retrieve:
-        return persona.instructions
-    return (
-        persona.instructions + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
-    )
+        return system
+    return system + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
 
 
 def run_turn(
@@ -83,7 +87,8 @@ def run_turn(
             # tool — is ours, and catching it here would file it as an ordinary
             # tool error that looks exactly like a legitimate refusal.
             try:
-                output, failed = tools.run(block.name, block.input, persona.tools), False
+                output = tools.run(block.name, block.input, persona.tools, persona=persona.name)
+                failed = False
             except (ValueError, KeyError, OSError) as exc:
                 output, failed = str(exc), True
             trace.tool(block.name, block.input, not failed, output, ms_since(started))

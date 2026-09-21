@@ -39,15 +39,36 @@ Already known:
 {known}"""
 
 
-def _due(conn) -> str | None:
-    """The thread with the oldest unread exchanges, if any has enough of them."""
-    row = conn.execute(
-        "SELECT thread FROM chat_log WHERE consolidated = 0 AND role = 'user'"
+# thread -> unconsolidated exchanges it had when an attempt on it failed. A
+# failure leaves the rows unflagged, so without this the thread is still due on
+# the very next turn, in any thread, and a batch the model can never handle is
+# re-sent and re-paid for every turn. In memory on purpose: a restart earns one
+# fresh retry, and there is no schema to keep in step.
+_failed_at: dict[str, int] = {}
+
+
+def _due(conn) -> tuple[str, int] | None:
+    """The thread with the oldest unread exchanges, and how many it has.
+
+    A thread that just failed waits for CONSOLIDATE_EVERY more exchanges, which
+    makes a failing thread cost no more often than a healthy one. It is skipped
+    rather than blocking the query, so it cannot starve the threads behind it.
+    """
+    rows = conn.execute(
+        "SELECT thread, COUNT(*) FROM chat_log WHERE consolidated = 0 AND role = 'user'"
         " AND thread IS NOT NULL GROUP BY thread HAVING COUNT(*) >= ?"
-        " ORDER BY MIN(id) LIMIT 1",
+        " ORDER BY MIN(id)",
         (CONSOLIDATE_EVERY,),
-    ).fetchone()
-    return row[0] if row else None
+    ).fetchall()
+    for thread, count in rows:
+        if count >= _failed_at.get(thread, 0) + CONSOLIDATE_EVERY:
+            return thread, count
+    return None
+
+
+def _fail(trace: Trace, thread: str, count: int, why: str, ms: int) -> None:
+    _failed_at[thread] = count
+    trace.consolidation(False, why, ms)
 
 
 def _parse(text: str) -> tuple[list[str], str] | None:
@@ -80,9 +101,10 @@ def _parse(text: str) -> tuple[list[str], str] | None:
 def _run(client, trace: Trace) -> None:
     conn = connect()
     try:
-        thread = _due(conn)
-        if thread is None:
+        due = _due(conn)
+        if due is None:
             return
+        thread, count = due
         rows = conn.execute(
             "SELECT id, role, content, created_at FROM chat_log"
             " WHERE thread = ? AND consolidated = 0 ORDER BY id LIMIT ?",
@@ -100,7 +122,7 @@ def _run(client, trace: Trace) -> None:
                 messages=[{"role": "user", "content": transcript}],
             )
         except Exception as exc:
-            trace.consolidation(False, f"call failed: {exc}", 0)
+            _fail(trace, thread, count, f"call failed: {exc}", 0)
             return
         ms = int((time.perf_counter() - started) * 1000)
         # The call is paid for whatever the reply turns out to be.
@@ -109,11 +131,11 @@ def _run(client, trace: Trace) -> None:
         said = "".join(b.text for b in response.content if b.type == "text")
         if response.stop_reason == "max_tokens":
             # A cut-off reply is a cap set too low, not a model that disagreed.
-            trace.consolidation(False, "reply truncated at max_tokens", ms)
+            _fail(trace, thread, count, "reply truncated at max_tokens", ms)
             return
         parsed = _parse(said)
         if parsed is None:
-            trace.consolidation(False, f"unusable reply {said.strip()[:80]!r}", ms)
+            _fail(trace, thread, count, f"unusable reply {said.strip()[:80]!r}", ms)
             return
         facts, episode = parsed
 
@@ -137,9 +159,11 @@ def _run(client, trace: Trace) -> None:
                 "UPDATE chat_log SET consolidated = 1 WHERE id = ?", [(r[0],) for r in rows]
             )
             conn.execute("COMMIT")
-        except Exception:
+        except Exception as exc:
             conn.execute("ROLLBACK")
-            raise
+            _fail(trace, thread, count, f"write failed: {exc}", ms)
+            return
+        _failed_at.pop(thread, None)
         trace.consolidation(
             True, f"{thread}: {len(rows) // 2} exchanges, {len(facts)} fact(s)", ms
         )

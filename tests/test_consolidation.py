@@ -10,6 +10,13 @@ from ninja import consolidation, episodic, semantic, trace
 from .conftest import StubClient, block, response
 
 
+@pytest.fixture(autouse=True)
+def fresh_backoff():
+    # The backoff is module state, so one test's failures must not leak into
+    # the next test's threads.
+    consolidation._failed_at.clear()
+
+
 def reply(facts=("Sol prefers tea.",), episode="Talked about drinks.", **kw):
     body = json.dumps({"facts": list(facts), "episode": episode})
     return response([block(type="text", text=body)], kw.get("stop", "end_turn"), (500, 60))
@@ -245,8 +252,9 @@ def test_the_turn_survives_and_retry_succeeds_after_a_failure():
     talk("assistant", 6)
     turn = trace.Trace("x")
     consolidation.run_if_due(StubClient([raw("garbage")]), turn)
+    talk("assistant", consolidation.CONSOLIDATE_EVERY, start=6)   # the backoff's price
     consolidation.run_if_due(StubClient([reply()]), turn)
-    assert flagged() == 12
+    assert flagged() == 24
     assert len(facts()) == 1
 
 
@@ -337,3 +345,80 @@ def test_the_receipt_prints_a_consolidation_event(capsys):
     turn.consolidation(False, "call failed: net", 3)
     trace.print_one(turn.finish("r"))
     assert "consolidate FAILED" in capsys.readouterr().out
+
+
+E = consolidation.CONSOLIDATE_EVERY
+
+
+def test_a_thread_that_always_fails_is_not_retried_every_turn():
+    # Fails against retry-on-every-turn: 5 turns with no new exchanges made 5
+    # paid calls. Now exactly one.
+    talk("assistant", 6)
+    client = StubClient([raw("I cannot help with that.")] * 5)
+    for _ in range(5):
+        consolidation.run_if_due(client, trace.Trace("x"))
+    assert len(client.seen) == 1
+
+
+def test_it_retries_after_enough_new_exchanges_and_success_clears_the_entry():
+    # Fails if the backoff is permanent, or is not cleared by a success.
+    talk("assistant", 6)
+    consolidation.run_if_due(StubClient([raw("no")]), trace.Trace("x"))
+    talk("assistant", E, start=6)
+    client = StubClient([reply()])
+    consolidation.run_if_due(client, trace.Trace("x"))
+    assert len(client.seen) == 1
+    assert flagged() == 24
+    assert consolidation._failed_at == {}
+
+
+def test_fewer_new_exchanges_than_the_threshold_do_not_retry():
+    # Fails against a backoff that resets on any new exchange.
+    talk("assistant", 6)
+    consolidation.run_if_due(StubClient([raw("no")]), trace.Trace("x"))
+    talk("assistant", E - 1, start=6)
+    client = StubClient([])
+    consolidation.run_if_due(client, trace.Trace("x"))
+    assert client.seen == []
+
+
+def test_a_backed_off_thread_does_not_starve_a_due_one():
+    # Fails if _due returns the oldest thread and stops: B would never run.
+    talk("assistant", 6)
+    consolidation.run_if_due(StubClient([raw("no")]), trace.Trace("x"))
+    talk("interview-coach", 6)
+    client = StubClient([reply()])
+    consolidation.run_if_due(client, trace.Trace("x"))
+    assert len(client.seen) == 1
+    assert rows("SELECT thread FROM episodes") == [("interview-coach",)]
+
+
+def test_every_failure_kind_sets_the_backoff():
+    class Boom:
+        messages = types.SimpleNamespace(create=lambda **kw: (_ for _ in ()).throw(OSError("n")))
+
+    def write_failure():
+        conn = trace.connect()
+        conn.execute(
+            "CREATE TRIGGER t BEFORE INSERT ON episodes"
+            " BEGIN SELECT RAISE(ABORT, 'x'); END"
+        )
+        conn.close()
+        return StubClient([reply()])
+
+    cases = [
+        lambda: Boom(),
+        lambda: StubClient([raw("{", stop="max_tokens")]),
+        lambda: StubClient([raw("garbage")]),
+        write_failure,
+    ]
+    for make in cases:
+        consolidation._failed_at.clear()
+        # each case gets its own database via a fresh thread name
+        thread = f"t{len(consolidation._failed_at)}{id(make)}"
+        talk(thread, 6)
+        consolidation.run_if_due(make(), trace.Trace("x"))
+        assert thread in consolidation._failed_at, make
+        conn = trace.connect()
+        conn.execute("UPDATE chat_log SET consolidated = 1 WHERE thread = ?", (thread,))
+        conn.close()

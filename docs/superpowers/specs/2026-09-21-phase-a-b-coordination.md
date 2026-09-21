@@ -16,7 +16,14 @@
 | Tests | `test_tools`, `test_personas` additions | new `test_consolidation` |
 
 Only `agent.py` is touched by both, in **different regions** (lines ~32 and ~86 vs
-~186). Git will merge that cleanly. No shared migration number, no shared table.
+~186). No shared migration number, no shared table.
+
+**Correction, found by trying the merge:** it does *not* merge cleanly. Both
+branches also edit the `from ninja import ...` line at the top of `agent.py` — A1
+adds `rules`, B1 adds `consolidation` — and git cannot combine two edits to one
+line. It is one conflict hunk and the resolution is mechanical (keep both names).
+The original claim came from comparing function bodies and forgetting the
+imports. Combined result, verified: 197 tests, 94.20% coverage, ruff clean.
 
 ## How to run them without collisions
 

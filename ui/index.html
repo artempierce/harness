@@ -404,6 +404,10 @@ function step(e, i) {
       <span class="d">${moved} \u00b7 ${esc(e.why)}${e.unpriced ? ' \u00b7 unpriced' : ''}</span>
       <span class="t">${e.ms}ms</span></div>`;
   }
+  if (e.type === 'consolidation') return `<div class="step"><span class="k">${i+1}</span>
+    <span class="k">consolidate</span>
+    <span class="d">${e.ok ? 'ok' : 'failed'} — ${esc(e.why)}</span>
+    <span class="t">${e.ms}ms</span></div>`;
   if (e.type === 'gate') return `<div class="step"><span class="k">${i+1}</span>
     <span class="k">gate</span>
     <span class="d">${e.retrieve ? 'retrieve ' + e.hits : 'skip'} — ${esc(e.why)}</span>

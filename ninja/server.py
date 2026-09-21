@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, personas, router, semantic, tools, trace
+from ninja import agent, consolidation, episodic, personas, router, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
@@ -90,6 +90,7 @@ def chat(message: Message):
 
     # Nothing to adopt on failure: the turn's messages were a local list, and
     # the write below is the only thing that makes the turn part of a thread.
+    consolidation.run_if_due(client(), turn)
     trace_id = turn.finish(reply)
     episodic.save_exchange(session, message.text, reply, trace_id, persona.name)
     return {

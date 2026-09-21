@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DB = ROOT / ".ninja" / "state.db"
 SCHEMA = ROOT / "sql" / "schema.sql"
+MIGRATIONS = ROOT / "sql" / "migrations"
 
 # USD per million tokens: (input, output). Cost is computed here rather than
 # reported by the API, so an unknown model shows as zero rather than lying.
@@ -24,10 +25,52 @@ PRICING = {
 }
 
 
+def _pending(conn: sqlite3.Connection) -> list[Path]:
+    """Migration files numbered above what this database has already run."""
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    found = sorted(MIGRATIONS.glob("*.sql")) if MIGRATIONS.is_dir() else []
+    return [p for p in found if int(p.name.split("_", 1)[0]) > version]
+
+
+def migrate(conn: sqlite3.Connection) -> None:
+    """Bring a database up to the latest schema, one migration at a time.
+
+    Deliberately not executescript(): it issues a COMMIT before running and
+    ignores an explicit BEGIN, so a migration that fails on its third statement
+    leaves the first two applied and still reports failure. Statements run one
+    at a time inside a transaction that also carries the version bump, so a
+    half-finished migration takes its version number down with it and the next
+    connection retries it rather than skipping it.
+    """
+    for path in _pending(conn):
+        number = int(path.name.split("_", 1)[0])
+        body = "\n".join(
+            line for line in path.read_text().splitlines()
+            if not line.strip().startswith("--")
+        )
+        try:
+            conn.execute("BEGIN")
+            for statement in (s.strip() for s in body.split(";") if s.strip()):
+                conn.execute(statement)
+            conn.execute(f"PRAGMA user_version = {number}")
+            conn.execute("COMMIT")
+        except sqlite3.Error:
+            conn.execute("ROLLBACK")
+            raise
+
+
 def connect() -> sqlite3.Connection:
     DB.parent.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB)
+    # isolation_level=None hands transaction control to migrate(), which needs
+    # its BEGIN to mean what it says. Everything else here is single-statement,
+    # so autocommit costs nothing and the existing commit() calls are no-ops.
+    conn = sqlite3.connect(DB, isolation_level=None)
+    # The schema is frozen at its original shape and every later change is a
+    # migration, so a fresh database replays the whole chain rather than being
+    # shortcut to the current one. That is what keeps migrations exercised by
+    # every test run instead of only on the machine that wrote them.
     conn.executescript(SCHEMA.read_text())
+    migrate(conn)
     return conn
 
 
@@ -100,8 +143,9 @@ class Trace:
         conn = connect()
         cur = conn.execute(
             "INSERT INTO traces (started_at, duration_ms, user_input, reply,"
-            " model_calls, input_tokens, output_tokens, cost_usd, events)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " model_calls, input_tokens, output_tokens, cost_usd, events,"
+            " persona)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 self.started_at,
                 int((time.perf_counter() - self.t0) * 1000),
@@ -112,6 +156,9 @@ class Trace:
                 self.output_tokens,
                 round(self.cost, 6),
                 json.dumps(self.events),
+                # A turn runs as one persona — it is resolved once, before the
+                # loop — so the first model event that names one names them all.
+                next((e.get("persona") for e in self.events if e.get("persona")), None),
             ),
         )
         conn.commit()
@@ -143,13 +190,22 @@ def print_recent(limit: int = 10) -> None:
 
 def print_one(trace_id: int) -> None:
     conn = connect()
-    row = conn.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
+    # Named columns rather than SELECT * and a positional unpack. The first
+    # migration to add a column broke that unpack, which is a good argument
+    # against writing it that way in a schema that can now change.
+    row = conn.execute(
+        "SELECT id, started_at, duration_ms, user_input, reply, model_calls,"
+        " input_tokens, output_tokens, cost_usd, events, persona"
+        " FROM traces WHERE id = ?",
+        (trace_id,),
+    ).fetchone()
     conn.close()
     if row is None:
         raise SystemExit(f"no trace {trace_id}")
 
-    (tid, when, ms, ask, reply, calls, tin, tout, cost, events) = row
-    print(f"trace {tid} · {when} · {ms / 1000:.1f}s · {calls} model calls")
+    (tid, when, ms, ask, reply, calls, tin, tout, cost, events, persona) = row
+    ran_as = f" · {persona}" if persona else ""
+    print(f"trace {tid} · {when} · {ms / 1000:.1f}s · {calls} model calls{ran_as}")
     print(f"       {tin} in / {tout} out · ${cost:.5f}\n")
     print(f"you>   {ask}\n")
 

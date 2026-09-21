@@ -4,11 +4,24 @@ Every test runs against a throwaway database, so the suite never touches
 .ninja/state.db and tests can't see each other's rows.
 """
 
+import tempfile
 import types
+from pathlib import Path
 
 import pytest
 
 from ninja import trace
+
+# Redirected at import, not in a fixture, and that ordering is the point.
+# pytest imports conftest before any test module, and ninja/server.py opens the
+# database at ITS import — `messages = episodic.recall()` runs during
+# collection, before a single fixture has been set up. Without this line,
+# importing tests/test_server.py reaches the real ~/.ninja/state.db, which was
+# harmless when connect() only ran CREATE TABLE IF NOT EXISTS and is not now
+# that it also runs migrations: collecting the suite would migrate the
+# developer's own database. The autouse fixture below still gives every
+# individual test its own file.
+trace.DB = Path(tempfile.mkdtemp(prefix="ninja-tests-")) / "collection.db"
 
 
 @pytest.fixture(autouse=True)

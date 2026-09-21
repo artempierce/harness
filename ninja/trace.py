@@ -90,8 +90,12 @@ class Trace:
         self.input_tokens = 0
         self.output_tokens = 0
         self.cost = 0.0
+        # Per turn, not per loop: a child's delegations count against the same cap.
+        self.delegations = 0
 
-    def model(self, model: str, response, ms: int, persona: str | None = None) -> None:
+    def model(
+        self, model: str, response, ms: int, persona: str | None = None, depth: int = 0
+    ) -> None:
         used = response.usage
         self.input_tokens += used.input_tokens
         self.output_tokens += used.output_tokens
@@ -104,6 +108,7 @@ class Trace:
                 # persona made the call that went wrong.
                 "model": model,
                 "persona": persona,
+                "depth": depth,
                 "ms": ms,
                 "in": used.input_tokens,
                 "out": used.output_tokens,
@@ -164,10 +169,28 @@ class Trace:
             {"type": "gate", "retrieve": retrieve, "why": why, "hits": hits, "ms": 0}
         )
 
-    def tool(self, name: str, args: dict, ok: bool, output: str, ms: int) -> None:
+    def delegate(self, persona: str, depth: int, task: str, ok: bool, ms: int) -> None:
+        """A child loop that ran. Its calls are already `model` and `tool` events
+        at `depth`; this is the summary that ties them to who was asked.
+        A refusal never starts a child and is recorded as the failed `tool` call."""
+        self.events.append(
+            {
+                "type": "delegate",
+                "persona": persona,
+                "depth": depth,
+                "task": task[:200],
+                "ok": ok,
+                "ms": ms,
+            }
+        )
+
+    def tool(
+        self, name: str, args: dict, ok: bool, output: str, ms: int, depth: int = 0
+    ) -> None:
         self.events.append(
             {
                 "type": "tool",
+                "depth": depth,
                 "name": name,
                 "args": args,
                 "ms": ms,
@@ -251,6 +274,8 @@ def print_one(trace_id: int) -> None:
     print(f"you>   {ask}\n")
 
     for i, e in enumerate(json.loads(events), 1):
+        # Rows written before delegation have no depth.
+        pad = "  " * e.get("depth", 0)
         if e["type"] == "route":
             moved = "stayed in" if e["chosen"] == e["previous"] else f"{e['previous']} →"
             print(f"  {i}. route  {moved} {e['chosen']} · {e['why']}")
@@ -261,19 +286,26 @@ def print_one(trace_id: int) -> None:
         if e["type"] == "gate":
             verdict = f"retrieve {e['hits']}" if e["retrieve"] else "skip"
             print(f"  {i:>2}. gate      {verdict:<12} {e['why']}")
+        elif e["type"] == "delegate":
+            mark = "ok" if e["ok"] else "ERROR"
+            # `depth` is the child's; the line sits with the caller that asked.
+            print(
+                f"{'  ' * (e['depth'] - 1)}  {i:>2}. delegate {e['ms']:>5}ms  "
+                f"→ {e['persona']} (depth {e['depth']}) {mark}: {e['task']!r}"
+            )
         elif e["type"] == "model":
             # .get throughout: rows written before these fields existed are
             # still in the database and still have to print.
             ran_as = " ".join(x for x in (e.get("persona"), e.get("model")) if x)
             flag = "  [unpriced — not in the total]" if e.get("unpriced") else ""
             print(
-                f"  {i:>2}. model   {e['ms']:>6}ms  "
+                f"{pad}  {i:>2}. model   {e['ms']:>6}ms  "
                 f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}  {ran_as}{flag}"
             )
         else:
             mark = "ok" if e["ok"] else "ERROR"
             preview = e["preview"].replace("\n", "⏎")[:56]
-            print(f"  {i:>2}. tool    {e['ms']:>6}ms  {e['name']}({e['args']}) {mark}")
-            print(f"      {e['bytes']} bytes: {preview}")
+            print(f"{pad}  {i:>2}. tool    {e['ms']:>6}ms  {e['name']}({e['args']}) {mark}")
+            print(f"{pad}      {e['bytes']} bytes: {preview}")
 
     print(f"\nagent> {reply}")

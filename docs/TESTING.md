@@ -296,7 +296,7 @@ evals cheap have to be made before there are two hundred cases.
 
 ### Two scores, and only one of them needs a model
 
-`ARCHITECTURE.md` already splits it: **was it good**, and **was it healthy**.
+The plan (`docs/PLAN.md` §4, step 4) already splits it: **was it good**, and **was it healthy**.
 
 *Healthy* comes straight from the trace and is **always deterministic**: model
 calls, tool calls, which tools, gate retrieve/skip and why, tokens, cost,

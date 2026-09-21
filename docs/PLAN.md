@@ -1,7 +1,7 @@
 # Ninja — Plan v2 (for approval)
 
-**Status: proposal. Nothing here is built. Approve, change, or reject each
-numbered decision in §6 and I will start.**
+**Status (updated 2026-09-21): Phases A, B1 and C1 are built and merged. Next is
+D1 (skills). See §1 for what is done and §7 for the decisions as taken.**
 
 **Why a new plan:** the original 15 layers were written from a whiteboard. Having
 now read waku-agent's actual source (`docs/WAKU-MAPPING.md`), some layers are
@@ -17,21 +17,29 @@ says plainly what is finished and what is not.
 ```
 DONE on main                                     NOT DONE
 ────────────────────────────────────────────     ─────────────────────────────────
- 1  Bare agent run                                8b Delegation  ← half-designed
- 2  Loop, tools, stop condition                    9 The architect (proposals)
- 3  Tracing                                       10 Consolidation
+ 1  Bare agent run                                D1 SKILL.md loader      ← next
+ 2  Loop, tools, stop condition                   D2 create_skill (proposal)
+ 3  Tracing                                       B2 Gate upgrade (deferred)
  4  Episodic memory  (chat_log only)              11 Eval, diagnose, release
  5  Semantic memory  (FTS5, keyword gate)         12 LangGraph port
- 6  Dashboard                                     13 Registry + guarded set
- 7  Personas + tool allowlists                    14 Tool authoring
- 8a Threads + routing                             15 Build pipeline
+ 6  Dashboard                                      9 The architect (proposals)
+ 7  Personas + tool allowlists                    13 Registry + guarded set
+ 8a Threads + routing                             14 Tool authoring
+ 8b Delegation (C1, #16)                          15 Build pipeline
+ A1 Learned rules (#12)
+ A2 MEMORY.md mirror (#14)
+ 10 Consolidation (B1, #13)
     + migrations, coverage, mutation testing
+    + hardening batch 1 (#15)
 ```
 
 Parked, not merged: `layer-5-vectors` (embeddings). Findings kept in
 `docs/superpowers/specs/2026-09-21-layer-5-vectors-PARKED.md`.
 
 ### What 8b is, and why it stalled
+*Built since as C1 (#16): `tools.run` gained a `spawn` argument, with a depth cap,
+the subset rule and a per-turn budget. What follows is the original reasoning.*
+
 `delegate(persona, task)` is a **tool** that starts a whole new loop for another
 persona, with a fresh context holding only the task brief — not the parent's
 conversation — at `depth + 1`. Two guardrails come with it: a **depth cap** and
@@ -169,3 +177,26 @@ after E, when evals can actually say whether embeddings help.
 
 **7. First step.** Recommended: **A1 + A2 together** — write their spec next and
 stop for your review before any code.
+
+---
+
+## 7. Decisions as taken (2026-09-21)
+
+The recommended option was taken for each of §6:
+
+1. Learned rules live in a runtime file, `.ninja/rules/<persona>.md` (as built in A1).
+2. Per-persona, not one global soul (as built).
+3. Order: A → B1 → C → D → E → F. A, B1 and C1 are done.
+4. B2, the gate upgrade, is deferred until there are enough consolidated facts to measure it.
+5. The lighter process (one implementer, one review per PR) for A, B and D; the full loop for F.
+6. `layer-5-vectors` stays parked until evals (E) can say whether embeddings help.
+7. A1 and A2 went first, spec before code.
+
+### Next
+
+1. **Hardening batch 2**, before D, because D injects more text into the prompt: the
+   fail-open fallback persona, retrieval errors degrading instead of failing the turn,
+   and explicit handling of `max_tokens` and `refusal` stops.
+2. **D1**, the `SKILL.md` loader: spec approved first, then `skills/<name>/SKILL.md`
+   matched per message by keyword and injected in `build_system`.
+3. **D2** (`create_skill`, as a proposal you approve), then **E**, then **F**.

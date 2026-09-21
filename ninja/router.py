@@ -54,7 +54,16 @@ def route(client, user_input: str, current: str, cast: list, trace: Trace) -> st
     cleaned = said.strip().strip(".").strip().lower()
     chosen = names.get(cleaned)
     if chosen is None:
-        trace.route(current, current, f"unrecognised answer {said.strip()!r}", MODEL, response, ms)
+        # max_tokens and a genuinely unrecognised name are different problems
+        # with different fixes — one means raise the cap, the other means the
+        # model disagreed with the cast — so the trace should not conflate them.
+        truncated = response.stop_reason == "max_tokens"
+        why = (
+            f"reply truncated at max_tokens: {said.strip()!r}"
+            if truncated
+            else f"unrecognised answer {said.strip()!r}"
+        )
+        trace.route(current, current, why, MODEL, response, ms)
         return current
     why = "stayed" if chosen == current else f"moved on {said.strip()!r}"
     trace.route(chosen, current, why, MODEL, response, ms)

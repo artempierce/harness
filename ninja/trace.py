@@ -140,6 +140,11 @@ class Trace:
                 "in": response.usage.input_tokens if response is not None else 0,
                 "out": response.usage.output_tokens if response is not None else 0,
                 "ms": ms,
+                "stop": response.stop_reason if response is not None else None,
+                # Same hazard as Trace.model: an unpriced model adds nothing to
+                # the total, which is indistinguishable on the dashboard from a
+                # call that was free.
+                "unpriced": response is not None and model not in PRICING,
             }
         )
 

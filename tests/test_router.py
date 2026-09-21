@@ -43,8 +43,15 @@ def test_the_prompt_carries_the_descriptions_and_the_current_thread():
 def test_an_unknown_name_keeps_the_current_thread():
     # A router that can strand you is worse than no router.
     client = StubClient([answer("marketing-department")])
-    chosen = router.route(client, "hi", "assistant", cast(), trace.Trace("x"))
-    assert chosen == "assistant"
+    turn = trace.Trace("x")
+    assert router.route(client, "hi", "assistant", cast(), turn) == "assistant"
+
+    # And the decision is recorded, not just the fallback taken. An unrecorded
+    # fallback is a router that silently ignores the model.
+    event = next(e for e in turn.events if e["type"] == "route")
+    assert event["chosen"] == "assistant"
+    assert event["previous"] == "assistant"
+    assert "marketing-department" in event["why"]
 
 
 def test_a_blank_answer_keeps_the_current_thread():
@@ -82,6 +89,23 @@ def test_the_decision_is_recorded_with_its_reason():
     assert event["chosen"] == "interview-coach"
     assert event["previous"] == "assistant"
     assert event["why"]
+
+
+def test_a_truncated_reply_says_so_rather_than_looking_unrecognised():
+    # max_tokens is a different problem from the model naming something that
+    # does not exist, and the trace should not conflate them.
+    truncated = types.SimpleNamespace(
+        content=[block(type="text", text="interview")],
+        stop_reason="max_tokens",
+        usage=types.SimpleNamespace(input_tokens=80, output_tokens=20),
+    )
+    turn = trace.Trace("x")
+    client = StubClient([truncated])
+    assert router.route(client, "hi", "assistant", cast(), turn) == "assistant"
+
+    event = next(e for e in turn.events if e["type"] == "route")
+    assert "truncated" in event["why"]
+    assert event["stop"] == "max_tokens"
 
 
 def test_the_routers_tokens_are_in_the_turns_totals():

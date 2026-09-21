@@ -8,6 +8,71 @@ Written from reading waku-agent's source (`761c420`), not from its diagram.
 
 ---
 
+## 0. The whole project, in one screen
+
+```
+waku-agent/                         ~28,600 lines of Python
+├── waku/
+│   ├── loop/         agent.py (114)        THE loop. models.py (469): provider adapters
+│   ├── runtime/      session.py (127)      builds the system prompt each turn
+│   ├── memory/       the three pillars + gate + consolidation   (~1,700)
+│   ├── tools/        ~17 modules: calendar, github, MCP, search, notes,
+│   │                 memory_admin (update_soul, create_skill, manage_memory)
+│   ├── gateway/      cli, telegram, whatsapp, discord, voice, slack
+│   ├── graph/        optional triage: quick reply vs full agent  (flag, off)
+│   ├── ops/          LLMOps: tracing, judge, release_gate, arena, pricing,
+│   │                 dashboard (1,209), compare_history, show_trace
+│   ├── app.py (172)  the turn orchestrator — respond()
+│   ├── config.py     every knob, all WAKU_* env vars
+│   └── db.py         SQLite schema
+├── skills/           SKILL.md files that ship with it (weekly-brief, schedule-meeting…)
+├── evals/            deterministic tests + dataset.jsonl + memory_arena.json
+├── docs/             architecture.md, loop-vs-graph.md, evals.md, roadmap.md…
+└── sql/              init_supabase.sql (pgvector upgrade path)
+
+~/.waku/  (or ./.waku — WAKU_HOME; runtime data, gitignored)
+├── SOUL.md           who the agent is. Created on first run from DEFAULT_SOUL.
+├── state.db          SQLite + FTS5: facts, episodes, chat_log
+├── MEMORY.md         generated, human-readable mirror of facts + episodes
+├── skills/<name>/SKILL.md    skills the agent or you created
+├── traces/           one trace file per turn
+└── outbox/           drafted messages
+```
+
+### The system prompt, assembled (`session.build_system`)
+
+```
+SOUL.md                     ← who it is + standing rules + "Learned rules"
++ current date/time + tz    ← so "in 30 minutes" resolves
++ "your model is X"         ← the first thing curious users ask
++ "Relevant memory:"        ← only if the gate said retrieve
++ "Relevant skill instructions:"   ← SKILL.md bodies keyword-matched to the message
+```
+
+Five parts, in a fixed order, all plain text. **That is the whole mechanism** —
+no hidden state, and every part is a file or a table you can open.
+
+### How waku "improves itself" — and how thin that is
+
+Three tools let the agent change its own behaviour:
+
+| Tool | Does | Guard |
+|---|---|---|
+| `update_soul(rule)` | appends one line to `SOUL.md` under "## Learned rules" | a size cap only |
+| `create_skill(name, description, body)` | writes `skills/<name>/SKILL.md`, live this session | refuses to overwrite; validates the format; **"only after the user agrees" is a sentence in the tool description, not code** |
+| `manage_memory(action, kind, id)` | correct or forget a fact/episode | — |
+
+That is a real self-improvement loop, but a *light* one: no proposal document,
+no design step, no review, no PR, no guarded set. The agent writes straight into
+its own prompt and skills. The consent gate lives in the model's compliance with
+a tool description.
+
+**Ninja's planned design (layers 9 and 13–15) is much stricter** — proposals
+with no write access, two human approval gates, a guarded set the system cannot
+edit. Those are two different points on a real spectrum, and you get to choose.
+
+---
+
 ## 1. One turn in waku, in the order it runs
 
 `app.py: respond()` — every step named after the code that does it.

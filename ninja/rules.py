@@ -29,6 +29,11 @@ def _path(persona: str) -> Path:
 
 
 def rules_for(persona: str) -> str:
+    # Read on every turn for every persona, and personas.load accepts any name
+    # matching its directory. A name that could never have had a rules file
+    # written has none — that is not an error, and raising would take the turn down.
+    if not _NAME.fullmatch(persona):
+        return ""
     path = _path(persona)
     return path.read_text().strip() if path.exists() else ""
 

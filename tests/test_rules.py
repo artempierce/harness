@@ -131,3 +131,23 @@ def test_run_turn_passes_the_persona_name(rules_dir):
     persona = a_persona(name="interview-coach", tools=("add_rule",))
     agent.run_turn(stub, [{"role": "user", "content": "be brief"}], trace.Trace("x"), persona)
     assert (rules_dir / "interview-coach.md").read_text() == "- Be brief.\n"
+
+
+def test_a_persona_with_an_unusual_name_still_gets_a_prompt():
+    # Fails if rules_for raises on a name add_rule would refuse: personas.load
+    # accepts any directory name, and this runs every turn.
+    assert prompt_for("QA_Coach") == "You are a test persona."
+
+
+def test_add_rule_still_refuses_an_unusual_persona_name(rules_dir):
+    # Fails if the read-side leniency leaks into the write path.
+    with pytest.raises(ValueError, match="persona name"):
+        add("Be brief.", persona="QA_Coach")
+    assert not rules_dir.exists()
+
+
+def test_rules_for_a_path_like_name_reads_nothing(rules_dir, tmp_path):
+    # Fails if the name reaches a path: x.md sits where "../x" would resolve.
+    (tmp_path / "x.md").write_text("- secret\n")
+    rules_dir.mkdir()
+    assert rules.rules_for("../x") == ""

@@ -20,7 +20,7 @@ parts not built yet.
 
 ## Status
 
-Built layer by layer. Seven of fifteen so far.
+Built layer by layer. Eight of fifteen so far.
 
 | | Layer | |
 |---|---|---|
@@ -31,7 +31,7 @@ Built layer by layer. Seven of fifteen so far.
 | 5 | Semantic memory + retrieval gate | ✅ |
 | 6 | Dashboard | ✅ |
 | 7 | Personas | ✅ |
-| 8 | Delegation | — |
+| 8 | Threads and routing | ✅ |
 | 9 | The architect — proposals, no write access | — |
 | 10 | Consolidation | — |
 | 11 | Eval, diagnose, release | — |
@@ -121,9 +121,12 @@ context tokens not spent and irrelevant facts not injected.
 ### Coming as layers land
 
 ```
-you> /persona researcher          # switch personas          (layer 7)
-you> compare these two libraries  # delegates automatically  (layer 8)
-you> make me an interview coach   # drafts one, asks first   (layer 9)
+you> quiz me on api testing       # routed to interview-coach
+you> make a note about the call   # routed to assistant, the coach untouched
+you> and back to flaky tests      # the coach's thread, as you left it
+
+you> compare these two libraries  # delegates to a sub-agent  (layer 8b)
+you> make me an interview coach   # drafts one, asks first    (layer 9)
 ```
 
 ---

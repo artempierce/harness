@@ -191,13 +191,13 @@ LAYERS = [
     (1, "Bare agent run", "One agent"), (2, "Loop, tools, stop condition", "One agent"),
     (3, "Tracing", "One agent"), (4, "Episodic memory", "One agent"),
     (5, "Semantic memory + gate", "One agent"), (6, "The dashboard", "Seeing it"),
-    (7, "Personas", "The cast"), (8, "Delegation", "The cast"),
+    (7, "Personas", "The cast"), (8, "Threads and routing", "The cast"),
     (9, "The architect", "The cast"), (10, "Consolidation", "The system"),
     (11, "Eval, diagnose, release", "The system"), (12, "LangGraph port", "The port"),
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3, 4, 5, 6, 7}
+BUILT = {1, 2, 3, 4, 5, 6, 7, 8}
 SCAFFOLD = set()
 
 

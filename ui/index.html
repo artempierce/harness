@@ -291,12 +291,14 @@ async function personasView() {
       </div><p>${esc(x.description)}</p></div>`).join('');
 }
 
+// A switch is a property of the next message, not a stored default. The
+// endpoint that held one is gone: a value the next message overwrites was a
+// second source of truth waiting to disagree with the transcript.
+let pendingPersona = null;
+
 async function switchPersona(name) {
-  const res = await fetch('/api/persona', {method: 'POST',
-    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})});
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) return say('sys', 'switch failed: ' + detail(body, res.status));
-  say('sys', 'persona → ' + name);
+  pendingPersona = name;
+  say('sys', 'next message goes to ' + name);
   await counters();
   await render();
 }
@@ -394,6 +396,14 @@ async function show(id) {
 // "undefined(undefined)" in the colour reserved for a failed tool call — on
 // every turn, because the gate runs on every turn.
 function step(e, i) {
+  if (e.type === 'route') {
+    const moved = e.chosen === e.previous
+      ? 'stayed in ' + esc(e.chosen)
+      : esc(e.previous) + ' \u2192 ' + esc(e.chosen);
+    return `<div class="step"><span class="k">${i+1}</span><span class="k">route</span>
+      <span class="d">${moved} \u00b7 ${esc(e.why)}${e.unpriced ? ' \u00b7 unpriced' : ''}</span>
+      <span class="t">${e.ms}ms</span></div>`;
+  }
   if (e.type === 'gate') return `<div class="step"><span class="k">${i+1}</span>
     <span class="k">gate</span>
     <span class="d">${e.retrieve ? 'retrieve ' + e.hits : 'skip'} — ${esc(e.why)}</span>
@@ -463,12 +473,16 @@ $('composer').onsubmit = async ev => {
   say('you', text);
   const pending = say('sys', 'thinking…');
   try {
+    const payload = {text};
+    if (pendingPersona) { payload.persona = pendingPersona; pendingPersona = null; }
     const res = await fetch('/api/chat', {method:'POST',
-      headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const r = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(detail(r, res.status));
     pending.remove();
     say('bot', r.reply);
+    // Which conversation this landed in — the router may have moved it.
+    if (r.persona) $('chat-persona').textContent = r.persona;
     const link = say('sys', '');
     link.innerHTML = `trace <a onclick="show(${r.trace_id})">#${r.trace_id}</a> · working memory ${r.working_memory}`;
     await counters(); await show(r.trace_id);

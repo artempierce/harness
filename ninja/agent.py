@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import episodic, personas, semantic, tools
+from ninja import episodic, personas, router, semantic, tools
 from ninja.personas import Persona
 from ninja.trace import Trace
 
@@ -144,12 +144,11 @@ def switch(command: str, current: Persona) -> Persona:
 def main() -> None:
     client = anthropic.Anthropic()
     session = episodic.new_session()
-    messages = episodic.recall()
-    persona = personas.load(personas.DEFAULT)
+    cast = personas.all()
+    persona = personas.load(episodic.current_thread(personas.DEFAULT))
+    forced = False
 
     print(f"ninja | {persona.name} | model={persona.model} | ctrl-d to quit")
-    if messages:
-        print(f"remembering {len(messages)} earlier messages")
     print()
 
     while True:
@@ -162,20 +161,38 @@ def main() -> None:
             continue
         if user_input.startswith("/persona"):
             persona = switch(user_input, persona)
+            # An override: the next turn runs where you put it, without the
+            # router second-guessing the instruction. A bare /persona only
+            # lists the cast, so it is not an instruction to go anywhere.
+            forced = user_input.strip() != "/persona"
             continue
 
-        messages.append({"role": "user", "content": user_input})
-        trace = Trace(user_input)
-        reply = run_turn(client, messages, trace, persona,
-                         build_system(user_input, trace, persona))
-        trace_id = trace.finish(reply)
+        turn = Trace(user_input)
+        if forced:
+            # An override is still a decision, and the trace should say which
+            # one. Skipping the router silently leaves no record of why a turn
+            # went where it did — the same reason a gate skip is recorded
+            # rather than simply not happening.
+            turn.route(persona.name, persona.name, "explicit /persona", router.MODEL, None, 0)
+        else:
+            persona = personas.load(
+                router.route(client, user_input, persona.name, cast, turn)
+            )
+        forced = False
 
-        episodic.save(session, "user", user_input, trace_id)
-        episodic.save(session, "assistant", reply, trace_id)
+        # The transcript comes from the thread, not from a list carried across
+        # switches. Returning to a conversation finds it as it was.
+        messages = [*episodic.recall(persona.name), {"role": "user", "content": user_input}]
+        reply = run_turn(client, messages, turn, persona,
+                         build_system(user_input, turn, persona))
+        trace_id = turn.finish(reply)
 
-        print(f"\nagent> {reply}")
+        episodic.save(session, "user", user_input, trace_id, persona.name)
+        episodic.save(session, "assistant", reply, trace_id, persona.name)
+
+        print(f"\n{persona.name}> {reply}")
         print(
             f"[trace {trace_id} · {len(messages)} messages · "
-            f"{trace.input_tokens} in / {trace.output_tokens} out · "
-            f"${trace.cost:.5f}]\n"
+            f"{turn.input_tokens} in / {turn.output_tokens} out · "
+            f"${turn.cost:.5f}]\n"
         )

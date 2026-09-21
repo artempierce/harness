@@ -35,7 +35,7 @@ def test_a_persona_command_never_becomes_a_user_turn(monkeypatch, capsys):
     # IndexError off the empty script rather than passing quietly.
     stub = StubClient([])
     monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
-    monkeypatch.setattr(agent.episodic, "recall", lambda: [])
+    monkeypatch.setattr(agent.episodic, "recall", lambda thread: [])
 
     lines = iter(["/persona interview-coach", ""])
 
@@ -83,3 +83,62 @@ def test_a_persona_file_with_broken_yaml_does_not_end_the_session(tmp_path, monk
 
     assert agent.switch("/persona", started) is started
     assert "YAML" in capsys.readouterr().out
+
+
+def test_the_repl_routes_each_turn(monkeypatch, capsys):
+    # The router picks the thread; the turn runs in it.
+    from ninja import episodic, router
+
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
+    monkeypatch.setattr(router, "route", lambda *a, **k: "interview-coach")
+
+    lines = iter(["quiz me on api testing", ""])
+
+    def fake_input(prompt=""):
+        try:
+            return next(lines)
+        except StopIteration as end:
+            raise EOFError from end
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    agent.main()
+
+    # The message was filed under the thread the router named, reply and all.
+    assert [m["content"] for m in episodic.recall("interview-coach")] == [
+        "quiz me on api testing",
+        "ok",
+    ]
+    assert episodic.recall("assistant") == []
+
+
+def test_an_explicit_persona_overrides_the_router(monkeypatch):
+    # /persona is an override. The router does not overrule it for that turn.
+    from ninja import episodic, router
+
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
+
+    called = []
+    monkeypatch.setattr(router, "route", lambda *a, **k: called.append(1) or "assistant")
+
+    lines = iter(["/persona interview-coach", "a coaching question", ""])
+
+    def fake_input(prompt=""):
+        try:
+            return next(lines)
+        except StopIteration as end:
+            raise EOFError from end
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    agent.main()
+
+    assert called == [], "the router ran despite an explicit /persona override"
+    assert [m["content"] for m in episodic.recall("interview-coach")] == [
+        "a coaching question",
+        "ok",
+    ]

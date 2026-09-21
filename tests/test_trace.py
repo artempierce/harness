@@ -1,6 +1,6 @@
 from ninja import trace
 
-from .conftest import response
+from .conftest import block, response
 
 
 def test_cost_is_computed_per_model():
@@ -65,6 +65,8 @@ def test_the_trace_viewer_prints_every_kind_of_event(capsys):
     # Python, and nothing covered it.
     t = trace.Trace("what am I building?")
     t.gate(True, "1 fact(s) matched", 1)
+    t.route("interview-coach", "assistant", "moved on 'quiz me'", "claude-haiku-4-5",
+             response([block(type="text", text="interview-coach")], "end_turn"), 12)
     t.model("claude-haiku-4-5", response([], "tool_use", (120, 18)), 340, "assistant")
     t.tool("read_file", {"path": "README.md"}, True, "# Ninja", 2)
     t.model("claude-haiku-4-5", response([], "end_turn", (200, 30)), 410, "assistant")
@@ -77,6 +79,8 @@ def test_the_trace_viewer_prints_every_kind_of_event(capsys):
     for expected in ["gate", "retrieve 1", "1 fact(s) matched", "model",
                      "read_file", "assistant", "An agent harness."]:
         assert expected in out, expected
+    assert "route" in out
+    assert "assistant → interview-coach" in out
     # An event that fell through to a branch meant for another kind shows up as
     # a missing key here rather than as a plausible-looking line.
     assert "None" not in out

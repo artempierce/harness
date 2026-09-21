@@ -116,6 +116,38 @@ class Trace:
             }
         )
 
+    def route(
+        self, chosen: str, previous: str, why: str, model: str, response, ms: int
+    ) -> None:
+        """Which conversation this turn was filed under, and what it cost.
+
+        The classifier is a real model call, so its tokens belong in the turn's
+        receipt like any other. A router whose spend is invisible is the first
+        thing that would make a cost ceiling wrong.
+        """
+        if response is not None:
+            used = response.usage
+            self.input_tokens += used.input_tokens
+            self.output_tokens += used.output_tokens
+            self.cost += price(model, used.input_tokens, used.output_tokens)
+        self.events.append(
+            {
+                "type": "route",
+                "chosen": chosen,
+                "previous": previous,
+                "why": why,
+                "model": model,
+                "in": response.usage.input_tokens if response is not None else 0,
+                "out": response.usage.output_tokens if response is not None else 0,
+                "ms": ms,
+                "stop": response.stop_reason if response is not None else None,
+                # Same hazard as Trace.model: an unpriced model adds nothing to
+                # the total, which is indistinguishable on the dashboard from a
+                # call that was free.
+                "unpriced": response is not None and model not in PRICING,
+            }
+        )
+
     def gate(self, retrieve: bool, why: str, hits: int) -> None:
         # A skip is a decision, not an absence — record it so the ratio is
         # visible and the reason is readable afterwards.
@@ -210,6 +242,10 @@ def print_one(trace_id: int) -> None:
     print(f"you>   {ask}\n")
 
     for i, e in enumerate(json.loads(events), 1):
+        if e["type"] == "route":
+            moved = "stayed in" if e["chosen"] == e["previous"] else f"{e['previous']} →"
+            print(f"  {i}. route  {moved} {e['chosen']} · {e['why']}")
+            continue
         if e["type"] == "gate":
             verdict = f"retrieve {e['hits']}" if e["retrieve"] else "skip"
             print(f"  {i:>2}. gate      {verdict:<12} {e['why']}")

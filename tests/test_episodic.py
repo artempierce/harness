@@ -2,16 +2,16 @@ from ninja import episodic
 
 
 def test_nothing_recalled_when_empty():
-    assert episodic.recall() == []
+    assert episodic.recall("assistant") == []
 
 
 def test_turns_survive_a_restart():
     session = episodic.new_session()
-    episodic.save(session, "user", "my name is Sol")
-    episodic.save(session, "assistant", "Noted.")
+    episodic.save(session, "user", "my name is Sol", None, "assistant")
+    episodic.save(session, "assistant", "Noted.", None, "assistant")
 
     # A "restart" is just calling recall() again with a fresh list.
-    recalled = episodic.recall()
+    recalled = episodic.recall("assistant")
     assert [m["role"] for m in recalled] == ["user", "assistant"]
     assert recalled[0]["content"] == "my name is Sol"
 
@@ -21,22 +21,28 @@ def test_recall_never_starts_with_assistant():
     # the messages array — the API rejects it.
     session = episodic.new_session()
     for i in range(6):
-        episodic.save(session, "user", f"q{i}")
-        episodic.save(session, "assistant", f"a{i}")
-    assert episodic.recall(limit=5)[0]["role"] == "user"
-    assert episodic.recall(limit=4)[0]["role"] == "user"
+        episodic.save(session, "user", f"q{i}", None, "assistant")
+        episodic.save(session, "assistant", f"a{i}", None, "assistant")
+    assert episodic.recall("assistant", limit=5)[0]["role"] == "user"
+    assert episodic.recall("assistant", limit=4)[0]["role"] == "user"
 
 
 def test_recall_is_oldest_first():
+    # Alternating, because that is the only shape the API accepts and the only
+    # shape recall returns — three user messages in a row is not a
+    # conversation, it is a torn thread.
     session = episodic.new_session()
-    for i in range(3):
-        episodic.save(session, "user", f"message {i}")
-    assert [m["content"] for m in episodic.recall()] == ["message 0", "message 1", "message 2"]
+    episodic.save(session, "user", "message 0", None, "assistant")
+    episodic.save(session, "assistant", "message 1", None, "assistant")
+    episodic.save(session, "user", "message 2", None, "assistant")
+    assert [m["content"] for m in episodic.recall("assistant")] == [
+        "message 0", "message 1", "message 2"
+    ]
 
 
 def test_stats_counts_sessions():
     for session in (episodic.new_session(), episodic.new_session()):
-        episodic.save(session, "user", "hi")
+        episodic.save(session, "user", "hi", None, "assistant")
     stats = episodic.stats()
     assert stats["messages"] == 2
     assert stats["sessions"] == 2

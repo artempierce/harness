@@ -13,19 +13,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, personas, semantic, tools, trace
+from ninja import agent, episodic, personas, router, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
 app = FastAPI(title="ninja cockpit")
 
-# Seeded from episodic memory at import, so a restart picks the thread back up.
+# A session is one process run, and it is the only thing worth holding in
+# memory. The transcript is not: it lives in chat_log, one thread per persona,
+# read per request. There is no shared mutable state here to race on, and a
+# restart reconstructs nothing because nothing was ever only in memory.
 session = episodic.new_session()
-messages: list = episodic.recall()
-# Which persona an unspecified request defaults to. A *name*, not a resolved
-# Persona: it is read once at the top of a request and immediately turned into
-# a frozen object, so a switch cannot reach a turn already in flight.
-active: str = personas.DEFAULT
 _client: anthropic.Anthropic | None = None
 
 
@@ -47,10 +45,6 @@ class Message(BaseModel):
     persona: str | None = None
 
 
-class PersonaName(BaseModel):
-    name: str
-
-
 @app.get("/")
 def index():
     # Without Cache-Control the browser falls back to heuristic freshness and
@@ -61,39 +55,48 @@ def index():
 
 @app.post("/api/chat")
 def chat(message: Message):
-    # The persona is resolved once, here, before the loop starts. run_turn is
-    # handed the object; nothing inside the loop reads `active` again.
-    global messages, active
+    turn = trace.Trace(message.text)
     try:
-        persona = personas.load(message.persona or active)
+        current = episodic.current_thread(personas.DEFAULT)
+        if message.persona:
+            # An override still records the decision. The spec asks for a skip
+            # to be visible the way a gate skip is, and `x or route(...)` would
+            # short-circuit past the only thing that writes it down — leaving
+            # the trace silent about why a turn went where it did.
+            name = message.persona
+            turn.route(name, current, "explicit override", router.MODEL, None, 0)
+        else:
+            name = router.route(client(), message.text, current, personas.all(), turn)
+        persona = personas.load(name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # run_turn appends as it goes. Handing it the live list means a failure
-    # mid-loop leaves a tool_use block with no matching tool_result behind, and
-    # the API rejects every turn after that until the process restarts. Build
-    # the turn on a copy and adopt it only once it has come back whole.
-    working = [*messages, {"role": "user", "content": message.text}]
-    turn = trace.Trace(message.text)
+    messages = [
+        *episodic.recall(persona.name),
+        {"role": "user", "content": message.text},
+    ]
     try:
         reply = agent.run_turn(
-            client(), working, turn, persona, agent.build_system(message.text, turn, persona)
+            client(), messages, turn, persona,
+            agent.build_system(message.text, turn, persona),
         )
     except Exception as exc:
+        # Record the turn before refusing it. The router call has already been
+        # paid for and so has every model call before the failure; finishing
+        # only on success makes a failed turn free on the dashboard, which is
+        # the same fail-open shape as an unpriced model reporting zero.
+        turn.finish(f"[failed: {exc}]")
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
-    messages = working
-    # Only a request that named a persona moves the default. Writing it back on
-    # every turn also undoes a switch that landed while this one was running:
-    # the click is acknowledged, the panel repaints, and then a turn that
-    # started before it quietly puts the old default back.
-    if message.persona:
-        active = persona.name
+
+    # Nothing to adopt on failure: the turn's messages were a local list, and
+    # the write below is the only thing that makes the turn part of a thread.
     trace_id = turn.finish(reply)
-    episodic.save(session, "user", message.text, trace_id)
-    episodic.save(session, "assistant", reply, trace_id)
+    episodic.save_exchange(session, message.text, reply, trace_id, persona.name)
     return {
         "reply": reply,
         "trace_id": trace_id,
+        # The thread this turn ran as, not whatever the log says now — another
+        # request may have written since.
         "working_memory": len(messages),
         "persona": persona.name,
     }
@@ -146,7 +149,7 @@ def stats():
         "input_tokens": tin,
         "output_tokens": tout,
         "avg_ms": int(avg),
-        "working_memory": len(messages),
+        "working_memory": len(episodic.recall(episodic.current_thread(personas.DEFAULT))),
         "facts": semantic.count(),
         "gate_retrieve": sum(1 for g in gates if g["retrieve"]),
         "gate_skip": sum(1 for g in gates if not g["retrieve"]),
@@ -199,13 +202,13 @@ LAYERS = [
     (1, "Bare agent run", "One agent"), (2, "Loop, tools, stop condition", "One agent"),
     (3, "Tracing", "One agent"), (4, "Episodic memory", "One agent"),
     (5, "Semantic memory + gate", "One agent"), (6, "The dashboard", "Seeing it"),
-    (7, "Personas", "The cast"), (8, "Delegation", "The cast"),
+    (7, "Personas", "The cast"), (8, "Threads and routing", "The cast"),
     (9, "The architect", "The cast"), (10, "Consolidation", "The system"),
     (11, "Eval, diagnose, release", "The system"), (12, "LangGraph port", "The port"),
     (13, "Registry + guarded set", "Self-extension"), (14, "Tool authoring", "Self-extension"),
     (15, "The build pipeline", "Self-extension"),
 ]
-BUILT = {1, 2, 3, 4, 5, 6, 7}
+BUILT = {1, 2, 3, 4, 5, 6, 7, 8}
 SCAFFOLD = set()
 
 
@@ -220,7 +223,7 @@ def personas_panel():
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
-        "active": active,
+        "active": episodic.current_thread(personas.DEFAULT),
         "personas": [
             {
                 "name": p.name,
@@ -235,15 +238,6 @@ def personas_panel():
         ],
     }
 
-
-@app.post("/api/persona")
-def set_persona(body: PersonaName):
-    global active
-    try:
-        active = personas.load(body.name).name
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"active": active}
 
 
 @app.get("/api/memory")

@@ -48,6 +48,29 @@ def test_a_database_that_predates_migrations_is_brought_forward(temp_db):
     conn.close()
 
 
+def test_the_backfill_populates_rows_written_before_the_migration(temp_db):
+    # A database already at user_version 1 — schema plus migration 001 only —
+    # the shape of an existing .ninja/state.db right before this layer landed.
+    old = sqlite3.connect(temp_db)
+    old.executescript(trace.SCHEMA.read_text())
+    old.execute("ALTER TABLE traces ADD COLUMN persona TEXT")
+    old.execute("PRAGMA user_version = 1")
+    old.execute(
+        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id)"
+        " VALUES ('old', 'user', 'said before threads existed', '2026-01-01T00:00:00', NULL)"
+    )
+    old.commit()
+    old.close()
+
+    conn = trace.connect()
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == latest_version()
+    row = conn.execute(
+        "SELECT thread FROM chat_log WHERE content = 'said before threads existed'"
+    ).fetchone()
+    assert row[0] == "assistant"
+    conn.close()
+
+
 def test_migrations_do_not_run_a_second_time():
     # ALTER TABLE ADD COLUMN is not idempotent — a second run raises. Connecting
     # twice is the ordinary case, so this is the ordinary case working.
@@ -93,7 +116,9 @@ def test_the_frozen_schema_does_not_carry_migrated_columns():
     for path in trace.MIGRATIONS.glob("*.sql"):
         for line in path.read_text().splitlines():
             parts = line.strip().split()
-            if len(parts) > 5 and parts[:3] == ["ALTER", "TABLE", "traces"]:
+            # Any table, not just traces — a guard hardcoded to one table gives
+            # no protection to the next migration that touches another.
+            if len(parts) > 5 and parts[:2] == ["ALTER", "TABLE"]:
                 migrated.add(parts[5].rstrip(";"))
     assert migrated, "no ALTER found — this guard would pass vacuously"
     for column in migrated:

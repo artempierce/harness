@@ -9,6 +9,7 @@ step 3 of 6, and a persona that could change mid-turn would change the toolset
 underneath a request already in flight.
 """
 
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,7 @@ DEFAULT_INSTRUCTIONS = (
     "You are a helpful assistant with read access to this project's files. "
     "Keep answers short."
 )
+READ_ONLY_TOOLS = ("list_files", "read_file")
 
 REQUIRED = {"name", "description", "tools", "model"}
 
@@ -100,12 +102,22 @@ def _parse(text: str, source: Path) -> Persona:
 
 
 def _fallback() -> Persona:
-    """personas/ is absent. Behave exactly as layer 6 did."""
+    """The default persona could not be found on disk.
+
+    This stands in for a persona whose tool restrictions are gone — a deleted
+    directory or a wrong path looks exactly like this — so it is read-only, not
+    every tool, and it says so instead of quietly widening what the model can do.
+    """
+    warnings.warn(
+        f"personas/ has no default persona ({DIR}); running a read-only fallback",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     return Persona(
         name=DEFAULT,
         description="The default assistant.",
         instructions=DEFAULT_INSTRUCTIONS,
-        tools=tuple(s["name"] for s in tools.SCHEMAS),
+        tools=READ_ONLY_TOOLS,
         model=DEFAULT_MODEL,
     )
 

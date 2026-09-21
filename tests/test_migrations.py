@@ -126,3 +126,28 @@ def test_the_frozen_schema_does_not_carry_migrated_columns():
             f"{column!r} is in sql/schema.sql and in a migration. A frozen "
             f"schema is what makes the migration run on existing databases."
         )
+
+
+def test_a_database_whose_facts_table_is_not_full_text_search_is_refused(tmp_path, monkeypatch):
+    # A database migrated by another branch can carry a schema version that
+    # matches this code while its tables do not — the parked vectors branch's
+    # migration 003 turned `facts` into a plain table, and this branch's own 003
+    # is a different migration with the same number. The version says "up to
+    # date", so nothing runs, and the first chat dies mid-turn on "no such
+    # column: facts". Refuse at connect, with a message that says what happened.
+    foreign = tmp_path / "foreign.db"
+    conn = sqlite3.connect(foreign)
+    conn.executescript(
+        "CREATE TABLE facts (id INTEGER PRIMARY KEY, content TEXT, embedding BLOB,"
+        " source TEXT, trace_id INTEGER, created_at TEXT);"
+        "PRAGMA user_version = 3;"
+    )
+    conn.close()
+    monkeypatch.setattr(trace, "DB", foreign)
+
+    with pytest.raises(RuntimeError, match="does not match"):
+        trace.connect()
+
+
+def test_a_fresh_database_passes_the_schema_check():
+    trace.connect().close()

@@ -196,3 +196,48 @@ def test_a_reply_with_no_text_is_not_returned_empty():
 
     assert reply.strip() != ""
     assert "end_turn" in reply
+
+
+@pytest.mark.parametrize("reason", ["max_tokens", "refusal", "model_context_window_exceeded"])
+def test_an_abnormal_stop_is_marked_not_passed_off_as_a_finished_reply(reason):
+    # A reply cut off at the token cap, refused, or paused reads as a complete
+    # answer if the text alone is returned — and it is saved and replayed as
+    # one. The reason has to be in the text the user and the thread see.
+    client = StubClient([response([block(type="text", text="The answer is")], reason)])
+    messages = [{"role": "user", "content": "what is it?"}]
+    reply = agent.run_turn(client, messages, trace.Trace("x"), a_persona())
+
+    assert reply.startswith("The answer is")
+    assert reason in reply
+
+
+def test_a_max_tokens_stop_mid_tool_call_is_marked_and_the_tool_does_not_run():
+    # The cap can land inside a tool_use block. The half-built call must not be
+    # executed, and the user must be told the turn was cut short.
+    client = StubClient([response([
+        block(type="text", text="Let me look"),
+        block(type="tool_use", id="t1", name="read_file", input={"path": "pyproj"}),
+    ], "max_tokens")])
+    turn = trace.Trace("x")
+    reply = agent.run_turn(client, [{"role": "user", "content": "read it"}], turn, a_persona())
+
+    assert "max_tokens" in reply
+    assert [e["type"] for e in turn.events] == ["model"]
+
+
+def test_a_paused_turn_is_not_labelled_as_a_failure():
+    # pause_turn means "resume", not "stopped early" — it must not be reported
+    # as a truncation.
+    client = StubClient([response([block(type="text", text="Working on it")], "pause_turn")])
+    reply = agent.run_turn(client, [{"role": "user", "content": "hi"}], trace.Trace("x"),
+                           a_persona())
+
+    assert "stopped early" not in reply
+
+
+@pytest.mark.parametrize("reason", ["end_turn", "stop_sequence"])
+def test_a_normal_stop_is_returned_unmarked(reason):
+    client = StubClient([response([block(type="text", text="Done.")], reason)])
+    messages = [{"role": "user", "content": "hi"}]
+
+    assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "Done."

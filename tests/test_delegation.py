@@ -563,3 +563,77 @@ def test_an_unpriced_persona_that_never_delegates_still_runs():
     # Fails against: a budget or price check applied at depth 0 in run_turn.
     client = StubClient([text("hi")])
     assert run(client, a_persona(model="claude-brand-new-9"))[0] == "hi"
+
+
+# --- round 2: one eligibility rule, budget already spent, frontmatter types --
+
+
+@pytest.mark.parametrize("line", ["model: [a, b]", "tools: [[read_file]]"])
+def test_a_wrong_shaped_frontmatter_value_is_a_value_error_naming_the_file(cast, line):
+    # Fails against: no type check (an unhashable model or tool name is a TypeError,
+    # which nothing catches, so it would take the turn down).
+    cast("odd", ["read_file"])
+    path = personas.DIR / "odd" / "PERSONA.md"
+    key = line.split(":")[0]
+    text_ = "\n".join(line if row.startswith(key + ":") else row
+                      for row in path.read_text().splitlines())
+    path.write_text(text_ + "\n")
+    with pytest.raises(ValueError, match="odd"):
+        personas.load("odd")
+
+
+def test_an_unpriced_persona_is_neither_listed_nor_accepted(cast):
+    # Fails against: any divergence between the list and the refusal. One predicate.
+    _unpriced(cast)
+    cast("helper", ["read_file"])
+    parent = a_persona(name="narrow", tools=("read_file", "delegate"))
+    system = agent._instructions(parent, 0)
+    assert "- helper:" in system and "fresh" not in system
+    with pytest.raises(ValueError, match="fresh"):
+        agent._delegate(StubClient([]), trace.Trace("x"), parent, 0, "fresh", "t")
+
+
+def test_the_shared_predicate_drives_both_the_list_and_the_refusal(cast, monkeypatch):
+    cast("helper", ["read_file"])
+    parent = a_persona(name="narrow", tools=("read_file", "delegate"))
+    monkeypatch.setattr(agent, "_refusal", lambda *_: "no")
+    assert "helper" not in agent._instructions(parent, 0)
+    with pytest.raises(ValueError, match="^no$"):
+        agent._delegate(StubClient([]), trace.Trace("x"), parent, 0, "helper", "t")
+
+
+def test_self_delegation_is_not_listed_and_is_refused_without_a_call_or_cap(cast):
+    # Fails against: a self-named target being accepted (or listed).
+    cast("solo", ["read_file", "delegate"])
+    solo = personas.load("solo")
+    assert "- solo:" not in agent._instructions(solo, 0)
+    t = trace.Trace("go")
+    client = StubClient([delegate_call("d1", "solo"), text("ok")])
+    run(client, solo, t=t)
+    (result,) = results_of(client.seen[1])
+    assert result["is_error"] and "itself" in result["content"]
+    assert len(client.seen) == 2 and t.delegations == 0
+
+
+def test_delegations_after_the_budget_is_spent_are_refused_and_consume_nothing(cast):
+    # Fails against: the budget being seen only inside the child loop, which turns
+    # a refusal into a "successful" delegation that returns a [stopped line.
+    cast("helper", ["read_file"])
+    t = trace.Trace("go")
+    # The parent's own call crosses the ceiling and asks for three delegations.
+    batch = response(
+        [block(type="tool_use", id=f"d{i}", name="delegate",
+               input={"persona": "helper", "task": "t"}) for i in range(3)],
+        "tool_use",
+        EXPENSIVE,
+    )
+    client = StubClient([batch])
+    reply, messages, _ = run(client, t=t)
+
+    assert reply == STOPPED
+    assert len(client.seen) == 1, "no child call, and the parent's next call was stopped"
+    results = messages[-2]["content"]
+    assert [r["is_error"] for r in results] == [True, True, True]
+    assert all("already spent" in r["content"] for r in results)
+    assert t.delegations == 0
+    assert not [e for e in t.events if e["type"] == "delegate"]

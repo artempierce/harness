@@ -59,6 +59,31 @@ def _excess(child: Persona, depth: int, parent: Persona) -> list[str]:
     return sorted(set(_reduced(child, depth).tools) - set(parent.tools))
 
 
+def _refusal(child: Persona, depth: int, parent: Persona) -> str | None:
+    """Why `parent` may not delegate to `child` at `depth`, or None. The one
+    rule, so the list the model is offered and the refusal it would get agree."""
+    if child.name == parent.name:
+        return f"{parent.name} cannot delegate to itself."
+    # An unpriced model adds $0 to the trace, so the budget would never trip.
+    # A lone persona is the trace's business to flag; fan-out is where an
+    # unbounded spend becomes multiplicative, so this is where it fails closed.
+    for who in (parent, child):
+        if who.model not in PRICING:
+            return (
+                f"{who.name} runs on {who.model}, which has no price, so its spend "
+                "cannot be held to the turn budget. Price it in trace.PRICING first."
+            )
+    # Refuse rather than trim: quietly dropping a tool changes what the persona
+    # does without anyone having decided that.
+    extra = _excess(child, depth, parent)
+    if extra:
+        return (
+            f"{child.name} holds tools that {parent.name} does not: {', '.join(extra)}. "
+            "A delegate cannot have more privilege than the persona that asks."
+        )
+    return None
+
+
 def _instructions(persona: Persona, depth: int) -> str:
     """The persona's instructions, its learned rules, and who it can hand work to."""
     system = persona.instructions
@@ -73,7 +98,7 @@ def _instructions(persona: Persona, depth: int) -> str:
         targets = [
             f"- {p.name}: {p.description}"
             for p in personas.all()
-            if p.name != persona.name and not _excess(p, depth + 1, persona)
+            if not _refusal(p, depth + 1, persona)
         ]
         if targets:
             system += "\n\nYou can delegate a self-contained job to:\n" + "\n".join(targets)
@@ -181,6 +206,10 @@ def _delegate(client, trace: Trace, parent: Persona, depth: int, name: str, task
     That is what tools.run's caller turns into a tool error the orchestrator can
     read and recover from; anything else would fail the whole turn.
     """
+    # Before anything counts: a child that started past the ceiling would only
+    # return its "[stopped" line, which the trace would record as a success.
+    if trace.cost >= MAX_TURN_COST_USD:
+        raise ValueError(f"the turn budget of ${MAX_TURN_COST_USD:.2f} is already spent.")
     child_depth = depth + 1
     if child_depth > MAX_DEPTH:
         raise ValueError(f"delegation is limited to {MAX_DEPTH} levels deep.")
@@ -188,23 +217,9 @@ def _delegate(client, trace: Trace, parent: Persona, depth: int, name: str, task
         raise ValueError(f"at most {MAX_DELEGATIONS_PER_TURN} delegations per turn.")
     # Unknown and path-like names are refused inside load(), before any read.
     child = _reduced(personas.load(name), child_depth)
-    # An unpriced model adds $0 to the trace, so the budget would never trip.
-    # A lone persona is the trace's business to flag; fan-out is where an
-    # unbounded spend becomes multiplicative, so this is where it fails closed.
-    for who in (parent, child):
-        if who.model not in PRICING:
-            raise ValueError(
-                f"{who.name} runs on {who.model}, which has no price, so its spend "
-                "cannot be held to the turn budget. Price it in trace.PRICING first."
-            )
-    # Refuse rather than trim: quietly dropping a tool changes what the persona
-    # does without anyone having decided that.
-    extra = _excess(child, child_depth, parent)
-    if extra:
-        raise ValueError(
-            f"{name} holds tools that {parent.name} does not: {', '.join(extra)}. "
-            "A delegate cannot have more privilege than the persona that asks."
-        )
+    refusal = _refusal(child, child_depth, parent)
+    if refusal:
+        raise ValueError(refusal)
     trace.delegations += 1
     started = time.perf_counter()
     ok = False

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ninja import trace
+from ninja import mirror, trace
 
 # Redirected at import, not in a fixture, and that ordering is the point.
 # pytest imports conftest before any test module, and ninja/server.py opens the
@@ -72,3 +72,10 @@ class StubClient:
         # the reference would make every recorded call look identical.
         self.seen.append({**kw, "messages": list(kw["messages"])})
         return self.script.pop(0)
+
+
+@pytest.fixture(autouse=True)
+def temp_mirror(tmp_path, monkeypatch):
+    # The turn tests run the real hook, which would otherwise overwrite the
+    # developer's own .ninja/MEMORY.md.
+    monkeypatch.setattr(mirror, "PATH", tmp_path / "MEMORY.md")

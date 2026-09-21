@@ -112,21 +112,74 @@ def test_a_failure_is_one_line_on_stderr_and_does_not_raise(monkeypatch, capsys)
     assert err.count("\n") == 1 and "nope" in err
 
 
-def test_an_unreadable_rules_file_does_not_raise(rules_dir, capsys):
-    # Fails if the rules read is outside the catch-all in write().
+def test_one_unreadable_rules_file_does_not_hide_the_rest(rules_dir, monkeypatch):
+    # Fails if a rules read error fails the whole write (the old file stays, stale)
+    # or hides the readable files.
     rules_dir.mkdir()
-    (rules_dir / "assistant.md").write_bytes(b"\xff\xfe not utf-8")
+    (rules_dir / "assistant.md").write_text("- Keep answers short.\n")
+    (rules_dir / "interview-coach.md").write_bytes(b"\xff\xfe not utf-8")
+    semantic.remember("added this test")
+    mirror.PATH.write_text("stale")
     mirror.write()
-    assert "memory mirror not updated" in capsys.readouterr().err
+    text = mirror.PATH.read_text()
+    assert "- Keep answers short." in text
+    assert re.search(r"### interview-coach\n_could not read: UnicodeDecodeError", text)
+    assert "added this test" in text and "## Episodes (0)" in text
 
 
-def test_a_database_error_does_not_raise(monkeypatch, capsys):
+def test_a_facts_failure_is_shown_and_the_other_sections_are_current(monkeypatch, rules_dir):
+    # Fails if a facts error fails the whole write.
     def locked(limit=50):
         raise sqlite3.OperationalError("database is locked")
 
     monkeypatch.setattr(semantic, "all_facts", locked)
+    episode("still here")
+    rules_dir.mkdir()
+    (rules_dir / "assistant.md").write_text("- a rule\n")
     mirror.write()
-    assert "database is locked" in capsys.readouterr().err
+    text = mirror.PATH.read_text()
+    assert "## Facts\n_could not read: OperationalError: database is locked_" in text
+    assert "— still here" in text and "- a rule" in text
+
+
+def test_an_episodes_failure_is_shown_and_the_other_sections_are_current():
+    # Fails if an episodes error fails the whole write.
+    semantic.remember("a fact")
+    conn = connect()
+    conn.execute("DROP TABLE episodes")
+    conn.close()
+    mirror.write()
+    text = mirror.PATH.read_text()
+    assert "## Episodes\n_could not read: OperationalError" in text
+    assert "- a fact" in text and "## Learned rules" in text
+
+
+def test_a_failure_reason_cannot_fake_a_heading(monkeypatch):
+    # Fails if the exception message is written through unprocessed.
+    def boom(limit=50):
+        raise RuntimeError("boom\n## Facts (999)")
+
+    monkeypatch.setattr(semantic, "all_facts", boom)
+    mirror.write()
+    text = mirror.PATH.read_text()
+    assert [h for h in headings(text) if h.startswith("## Facts")] == ["## Facts"]
+    assert "boom ## Facts (999)" in text
+
+
+def test_a_long_failure_reason_is_capped(monkeypatch):
+    def boom(limit=50):
+        raise RuntimeError("x" * 1000)
+
+    monkeypatch.setattr(semantic, "all_facts", boom)
+    mirror.write()
+    line = [ln for ln in mirror.PATH.read_text().splitlines() if "could not read" in ln][0]
+    assert len(line) < 200
+
+
+def test_a_rendering_failure_is_still_the_last_resort(monkeypatch, capsys):
+    monkeypatch.setattr(mirror, "_render", lambda: 1 / 0)
+    mirror.write()
+    assert "memory mirror not updated" in capsys.readouterr().err
 
 
 def test_stored_text_cannot_fake_a_section_heading(rules_dir):

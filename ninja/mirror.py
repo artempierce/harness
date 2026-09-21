@@ -48,6 +48,22 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def _unreadable(exc: Exception) -> str:
+    # The reason is text from outside this file, so it gets the same treatment
+    # as stored text: one line, and no leading `#`.
+    return _safe(f"_could not read: {_one_line(f'{type(exc).__name__}: {exc}')[:120]}_")
+
+
+def _section(heading: str, build) -> list[str]:
+    # A section that cannot be read says so in the file. Failing the whole write
+    # would leave the previous file in place looking fine, and hide exactly the
+    # rule or fact that broke it.
+    try:
+        return build()
+    except Exception as exc:
+        return [heading, _unreadable(exc)]
+
+
 def _more(hidden: int) -> list[str]:
     return [f"_{hidden} more not shown_"] if hidden > 0 else []
 
@@ -76,14 +92,22 @@ def _episodes() -> list[str]:
 def _rules() -> list[str]:
     out = ["## Learned rules"]
     for path in sorted(rules.DIR.glob("*.md")) if rules.DIR.is_dir() else []:
-        body = path.read_text().strip()
+        try:
+            body = _safe(path.read_text().strip())
+        except Exception as exc:
+            body = _unreadable(exc)
         if body:
-            out += [f"### {path.stem}", _safe(body)]
+            out += [f"### {path.stem}", body]
     return out if len(out) > 1 else [*out, NONE]
 
 
 def _render() -> str:
-    parts = [[*HEADER.splitlines()], _facts(), _episodes(), _rules()]
+    parts = [
+        HEADER.splitlines(),
+        _section("## Facts", _facts),
+        _section("## Episodes", _episodes),
+        _section("## Learned rules", _rules),
+    ]
     return "\n\n".join("\n".join(p) for p in parts) + "\n"
 
 

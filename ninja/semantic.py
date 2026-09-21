@@ -17,14 +17,22 @@ from ninja.trace import connect
 TOP_K = 3
 
 
-def remember(content: str, source: str = "told", trace_id: int | None = None) -> int:
-    conn = connect()
+def remember(
+    content: str, source: str = "told", trace_id: int | None = None, conn=None
+) -> int:
+    # A caller that passes its own connection is inside a transaction of its
+    # own and owns the commit. Committing or closing here would end that
+    # transaction halfway through.
+    own = conn is None
+    if own:
+        conn = connect()
     cur = conn.execute(
         "INSERT INTO facts (content, source, trace_id, created_at) VALUES (?, ?, ?, ?)",
         (content, source, trace_id, datetime.now(UTC).isoformat(timespec="seconds")),
     )
-    conn.commit()
-    conn.close()
+    if own:
+        conn.commit()
+        conn.close()
     return cur.lastrowid
 
 

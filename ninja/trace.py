@@ -148,6 +148,15 @@ class Trace:
             }
         )
 
+    def consolidation(self, ok: bool, why: str, ms: int) -> None:
+        """What a consolidation attempt did. Its tokens are a `model` event.
+
+        Kept apart from the cost so a failed attempt still says why. The
+        rows stay unconsolidated on every failure, so without this the retry
+        that follows would be the only sign anything had gone wrong.
+        """
+        self.events.append({"type": "consolidation", "ok": ok, "why": why, "ms": ms})
+
     def gate(self, retrieve: bool, why: str, hits: int) -> None:
         # A skip is a decision, not an absence — record it so the ratio is
         # visible and the reason is readable afterwards.
@@ -245,6 +254,9 @@ def print_one(trace_id: int) -> None:
         if e["type"] == "route":
             moved = "stayed in" if e["chosen"] == e["previous"] else f"{e['previous']} →"
             print(f"  {i}. route  {moved} {e['chosen']} · {e['why']}")
+            continue
+        if e["type"] == "consolidation":
+            print(f"  {i:>2}. consolidate {'ok' if e['ok'] else 'FAILED'} · {e['why']}")
             continue
         if e["type"] == "gate":
             verdict = f"retrieve {e['hits']}" if e["retrieve"] else "skip"

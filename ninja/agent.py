@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import episodic, personas, router, rules, semantic, tools
+from ninja import consolidation, episodic, personas, router, rules, semantic, tools
 from ninja.personas import Persona
 from ninja.trace import Trace
 
@@ -190,6 +190,7 @@ def main() -> None:
         messages = [*episodic.recall(persona.name), {"role": "user", "content": user_input}]
         reply = run_turn(client, messages, turn, persona,
                          build_system(user_input, turn, persona))
+        consolidation.run_if_due(client, turn)
         trace_id = turn.finish(reply)
 
         episodic.save(session, "user", user_input, trace_id, persona.name)

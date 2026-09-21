@@ -168,7 +168,13 @@ def main() -> None:
             continue
 
         turn = Trace(user_input)
-        if not forced:
+        if forced:
+            # An override is still a decision, and the trace should say which
+            # one. Skipping the router silently leaves no record of why a turn
+            # went where it did — the same reason a gate skip is recorded
+            # rather than simply not happening.
+            turn.route(persona.name, persona.name, "explicit /persona", router.MODEL, None, 0)
+        else:
             persona = personas.load(
                 router.route(client, user_input, persona.name, cast, turn)
             )

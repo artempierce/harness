@@ -28,9 +28,13 @@ def test_recall_never_starts_with_assistant():
 
 
 def test_recall_is_oldest_first():
+    # Alternating, because that is the only shape the API accepts and the only
+    # shape recall returns — three user messages in a row is not a
+    # conversation, it is a torn thread.
     session = episodic.new_session()
-    for i in range(3):
-        episodic.save(session, "user", f"message {i}", None, "assistant")
+    episodic.save(session, "user", "message 0", None, "assistant")
+    episodic.save(session, "assistant", "message 1", None, "assistant")
+    episodic.save(session, "user", "message 2", None, "assistant")
     assert [m["content"] for m in episodic.recall("assistant")] == [
         "message 0", "message 1", "message 2"
     ]

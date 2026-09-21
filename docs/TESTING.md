@@ -70,10 +70,15 @@ Written down because an unlisted gap is a gap somebody assumes is filled.
   `test_the_frozen_schema_does_not_carry_migrated_columns`: adding a column to
   `schema.sql` instead of writing a migration looks like it works and silently
   does nothing for databases that already exist.
-- **Concurrency.** `server.messages` and `server.active` are module globals
-  written from a threadpool. `TestClient` calls are sequential, so no test here
-  can catch a race. Deliberate, per the layer 7 critique: the fix is a
-  per-conversation transcript at layer 8, not a lock now.
+- **Concurrency.** Layer 8a deleted `server.messages` and `server.active`, so
+  there is no shared mutable state left in the process — but the race moved
+  into `chat_log` rather than disappearing. Two concurrent turns on one thread
+  can still interleave their writes. `save_exchange` puts both halves of an
+  exchange in one transaction so a crash cannot tear them, and `recall`
+  enforces alternation so a thread that does get torn recovers on the next
+  turn instead of refusing every later one. `TestClient` calls are sequential,
+  so no test here can produce the interleaving; the tests cover the recovery,
+  not the race.
 - **Scale.** bm25 over three facts is not bm25 over three thousand. The gate's
   "no relevance floor" decision is correct at the size the tests run at and is
   untested at the size that would change it.

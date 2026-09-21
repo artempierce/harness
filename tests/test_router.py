@@ -37,7 +37,21 @@ def test_the_prompt_carries_the_descriptions_and_the_current_thread():
     prompt = sent["system"] + str(sent["messages"])
     assert "interview-coach" in prompt
     assert "rehearse" in prompt        # from interview-coach's description
-    assert "interview-coach" in sent["system"]   # the current thread is stated
+
+
+def test_the_prompt_states_which_thread_is_current():
+    # Stickiness is the property that makes the router usable — a follow-up
+    # like "why would you pick that?" names no conversation, so without it the
+    # router misfiles constantly. It lives in one line of the prompt.
+    #
+    # Asserting on a name that is also a persona proves nothing: the cast block
+    # already contains every persona name. Ask with a current thread no persona
+    # is named after, so only the stickiness line can put it in the prompt.
+    client = StubClient([answer("assistant")])
+    router.route(client, "hello", "not-a-persona-name", cast(), trace.Trace("x"))
+
+    assert 'The current conversation is "not-a-persona-name".' in client.seen[0]["system"]
+    assert "Stay with the current conversation" in client.seen[0]["system"]
 
 
 def test_an_unknown_name_keeps_the_current_thread():

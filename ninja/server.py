@@ -56,12 +56,17 @@ def index():
 @app.post("/api/chat")
 def chat(message: Message):
     turn = trace.Trace(message.text)
-    # Naming a persona is an override; the router does not overrule it.
-    name = message.persona or router.route(
-        client(), message.text, episodic.current_thread(personas.DEFAULT),
-        personas.all(), turn,
-    )
     try:
+        current = episodic.current_thread(personas.DEFAULT)
+        if message.persona:
+            # An override still records the decision. The spec asks for a skip
+            # to be visible the way a gate skip is, and `x or route(...)` would
+            # short-circuit past the only thing that writes it down — leaving
+            # the trace silent about why a turn went where it did.
+            name = message.persona
+            turn.route(name, current, "explicit override", router.MODEL, None, 0)
+        else:
+            name = router.route(client(), message.text, current, personas.all(), turn)
         persona = personas.load(name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -76,17 +81,23 @@ def chat(message: Message):
             agent.build_system(message.text, turn, persona),
         )
     except Exception as exc:
+        # Record the turn before refusing it. The router call has already been
+        # paid for and so has every model call before the failure; finishing
+        # only on success makes a failed turn free on the dashboard, which is
+        # the same fail-open shape as an unpriced model reporting zero.
+        turn.finish(f"[failed: {exc}]")
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
 
     # Nothing to adopt on failure: the turn's messages were a local list, and
-    # these two writes are the only thing that makes the turn part of a thread.
+    # the write below is the only thing that makes the turn part of a thread.
     trace_id = turn.finish(reply)
-    episodic.save(session, "user", message.text, trace_id, persona.name)
-    episodic.save(session, "assistant", reply, trace_id, persona.name)
+    episodic.save_exchange(session, message.text, reply, trace_id, persona.name)
     return {
         "reply": reply,
         "trace_id": trace_id,
-        "working_memory": len(episodic.recall(episodic.current_thread(personas.DEFAULT))),
+        # The thread this turn ran as, not whatever the log says now — another
+        # request may have written since.
+        "working_memory": len(messages),
         "persona": persona.name,
     }
 

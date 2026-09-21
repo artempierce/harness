@@ -116,9 +116,20 @@ messages, runs the turn, and `episodic.save()` writes the result — which alrea
 only happens after the turn returns whole, so layer 7's commit-on-success
 property is preserved rather than reimplemented.
 
-Two things follow. The race is gone, because there is no shared mutable state
-left to race on. And a restart no longer needs to reconstruct anything: the
-threads were always in the database.
+Two things follow. There is no shared mutable state left in the process. And a
+restart no longer needs to reconstruct anything: the threads were always in the
+database.
+
+What does **not** follow — and an earlier draft of this spec claimed it did —
+is that the race is gone. It moved. Two concurrent turns on one thread can
+still interleave their writes into `chat_log`, leaving it reading user, user,
+assistant, assistant, which the Messages API refuses; and because it is on
+disk, a restart does not clear it. Two things keep that survivable rather than
+fatal. `save_exchange` writes both halves of an exchange in one transaction, so
+a crash between them cannot tear a thread with no concurrency involved at all.
+And `recall` enforces alternation rather than only dropping a leading assistant
+message, so a thread that does get torn recovers on the next turn instead of
+refusing every later one until the damage scrolls out of the window.
 
 The cost is one small SQLite read per request. At six rows, against a local
 file, this is not a trade worth thinking about.

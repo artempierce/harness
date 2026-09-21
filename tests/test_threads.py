@@ -71,3 +71,29 @@ def test_history_exposes_the_thread():
     # The cockpit's Episodic panel reads this.
     episodic.save("s1", "user", "a", None, "interview-coach")
     assert episodic.history()[0]["thread"] == "interview-coach"
+
+
+def test_a_torn_thread_recovers_instead_of_staying_broken():
+    # Two turns interleaving on one thread leave user, user, assistant,
+    # assistant. The Messages API refuses that, so before alternation was
+    # enforced every later turn in the thread failed until the pair scrolled
+    # out of the recall window — and it is on disk, so a restart did not help.
+    for role, text in [
+        ("user", "first question"),
+        ("user", "second question"),
+        ("assistant", "first answer"),
+        ("assistant", "second answer"),
+    ]:
+        episodic.save("s1", role, text, None, "assistant")
+
+    roles = [m["role"] for m in episodic.recall("assistant")]
+    assert roles == ["user", "assistant"], f"recall returned a shape the API rejects: {roles}"
+
+
+def test_both_halves_of_an_exchange_are_written_together():
+    # One transaction, so a crash between them cannot tear the thread.
+    episodic.save_exchange("s1", "what is 2+2?", "four", 7, "assistant")
+    assert [(m["role"], m["content"]) for m in episodic.recall("assistant")] == [
+        ("user", "what is 2+2?"),
+        ("assistant", "four"),
+    ]

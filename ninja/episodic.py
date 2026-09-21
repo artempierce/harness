@@ -44,6 +44,32 @@ def save(
     conn.close()
 
 
+def save_exchange(
+    session_id: str, user_text: str, reply: str, trace_id: int | None, thread: str
+) -> None:
+    """Both halves of one exchange, in one transaction.
+
+    Two separate writes can be torn apart — by a crash between them, or by a
+    concurrent turn on the same thread landing its user message in the gap.
+    Either leaves the thread reading user, user, assistant, assistant, which
+    the Messages API rejects, so every later turn in that thread fails until
+    the pair scrolls out of the recall window. It is written to disk, so a
+    restart does not clear it.
+    """
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    conn = connect()
+    conn.executemany(
+        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id, thread)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (session_id, "user", user_text, now, trace_id, thread),
+            (session_id, "assistant", reply, now, trace_id, thread),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+
 def recall(thread: str, limit: int = RECALL) -> list[dict]:
     """One thread's most recent messages, oldest first, shaped for the array."""
     conn = connect()
@@ -53,11 +79,17 @@ def recall(thread: str, limit: int = RECALL) -> list[dict]:
         (thread, limit),
     ).fetchall()
     conn.close()
-    # An assistant message cannot lead the array, so drop it if the window
-    # happens to start mid-exchange.
-    messages = [{"role": role, "content": content} for role, content in reversed(rows)]
-    while messages and messages[0]["role"] != "user":
-        messages.pop(0)
+    # Roles have to alternate, starting with user — the API rejects anything
+    # else. Dropping only a leading assistant message is not enough: two turns
+    # interleaving on one thread leave user, user, assistant, assistant, and
+    # every later turn is then refused until the pair scrolls out of the
+    # window. Keeping only what alternates makes a torn thread recover on the
+    # next turn instead of staying broken.
+    messages: list[dict] = []
+    for role, content in reversed(rows):
+        expected = "user" if len(messages) % 2 == 0 else "assistant"
+        if role == expected:
+            messages.append({"role": role, "content": content})
     return messages
 
 

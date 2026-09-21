@@ -363,3 +363,37 @@ def test_the_active_thread_follows_the_last_message():
     # cannot disagree.
     episodic.save("s1", "user", "x", None, "interview-coach")
     assert client.get("/api/personas").json()["active"] == "interview-coach"
+
+
+def test_a_failed_turn_still_records_what_it_spent(monkeypatch):
+    # The router call is paid for before the turn begins, and so is every model
+    # call before the one that failed. Finishing the trace only on success
+    # makes a failed turn look free on the dashboard — the same fail-open shape
+    # as an unpriced model reporting zero, in the layer whose spec cites that
+    # very bug as a reason to be careful.
+    monkeypatch.setattr(server, "client", ExplodingClient)
+
+    assert client.post("/api/chat", json={"text": "hi"}).status_code == 502
+
+    rows = client.get("/api/traces").json()
+    assert len(rows) == 1, "a failed turn left no trace at all"
+    assert rows[0]["user_input"] == "hi"
+    assert "failed" in client.get(f"/api/traces/{rows[0]['id']}").json()["reply"]
+
+
+def test_an_overridden_turn_still_records_the_decision(monkeypatch):
+    # The spec asks for the skip to be visible the way a gate skip is. Writing
+    # `message.persona or router.route(...)` short-circuits past the only thing
+    # that records it, leaving the trace silent about why a turn went where it
+    # did.
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr(server, "client", lambda: stub)
+
+    body = client.post("/api/chat", json={"text": "hi", "persona": "interview-coach"}).json()
+    events = client.get(f"/api/traces/{body['trace_id']}").json()["events"]
+
+    route = next(e for e in events if e["type"] == "route")
+    assert route["chosen"] == "interview-coach"
+    assert "override" in route["why"]

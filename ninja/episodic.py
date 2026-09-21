@@ -48,7 +48,11 @@ def recall(thread: str, limit: int = RECALL) -> list[dict]:
     """One thread's most recent messages, oldest first, shaped for the array."""
     conn = connect()
     rows = conn.execute(
-        "SELECT role, content FROM chat_log WHERE thread = ?"
+        # COALESCE, not a bare equality: `thread = ?` never matches NULL, and a
+        # stray NULL row (anything written before migration 002's backfill ran,
+        # or straight to the table) would otherwise be invisible under every
+        # thread name. NULL reads as the same default persona the backfill uses.
+        "SELECT role, content FROM chat_log WHERE COALESCE(thread, 'assistant') = ?"
         " ORDER BY id DESC LIMIT ?",
         (thread, limit),
     ).fetchall()

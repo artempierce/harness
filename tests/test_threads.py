@@ -4,7 +4,7 @@ The point of a thread is that interrupting one conversation does not disturb
 another. These are the tests for "does not disturb".
 """
 
-from ninja import episodic
+from ninja import episodic, trace
 
 
 def test_a_message_stays_in_its_own_thread():
@@ -58,13 +58,33 @@ def test_the_current_thread_falls_back_when_there_is_no_history():
 
 def test_stats_still_counts_sessions_not_threads():
     # session_id means one process run and the Episodic panel reports it.
+    # The fixture must make the two counts differ, or swapping the column in
+    # that query would pass this test.
     episodic.save("s1", "user", "a", None, "assistant")
     episodic.save("s1", "user", "b", None, "interview-coach")
-    episodic.save("s2", "user", "c", None, "assistant")
-    assert episodic.stats()["sessions"] == 2
+    episodic.save("s1", "user", "c", None, "assistant")
+    # one session, two threads
+    assert episodic.stats()["sessions"] == 1
 
 
 def test_history_exposes_the_thread():
     # The cockpit's Episodic panel reads this.
     episodic.save("s1", "user", "a", None, "interview-coach")
     assert episodic.history()[0]["thread"] == "interview-coach"
+
+
+def test_history_written_before_threads_existed_is_not_orphaned():
+    # WHERE thread = ? never matches NULL. Without the backfill in migration
+    # 002, every message in an existing database would be invisible to recall.
+    conn = trace.connect()
+    conn.execute(
+        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id, thread)"
+        " VALUES ('old', 'user', 'said before threads existed', '2026-01-01T00:00:00', NULL, NULL)"
+    )
+    conn.commit()
+    conn.close()
+
+    assert any(
+        m["content"] == "said before threads existed"
+        for m in episodic.recall("assistant")
+    ), "a NULL-thread row is invisible to every thread"

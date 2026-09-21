@@ -13,19 +13,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, episodic, personas, semantic, tools, trace
+from ninja import agent, episodic, personas, router, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
 app = FastAPI(title="ninja cockpit")
 
-# Seeded from episodic memory at import, so a restart picks the thread back up.
+# A session is one process run, and it is the only thing worth holding in
+# memory. The transcript is not: it lives in chat_log, one thread per persona,
+# read per request. There is no shared mutable state here to race on, and a
+# restart reconstructs nothing because nothing was ever only in memory.
 session = episodic.new_session()
-messages: list = episodic.recall(personas.DEFAULT)
-# Which persona an unspecified request defaults to. A *name*, not a resolved
-# Persona: it is read once at the top of a request and immediately turned into
-# a frozen object, so a switch cannot reach a turn already in flight.
-active: str = personas.DEFAULT
 _client: anthropic.Anthropic | None = None
 
 
@@ -47,10 +45,6 @@ class Message(BaseModel):
     persona: str | None = None
 
 
-class PersonaName(BaseModel):
-    name: str
-
-
 @app.get("/")
 def index():
     # Without Cache-Control the browser falls back to heuristic freshness and
@@ -61,40 +55,38 @@ def index():
 
 @app.post("/api/chat")
 def chat(message: Message):
-    # The persona is resolved once, here, before the loop starts. run_turn is
-    # handed the object; nothing inside the loop reads `active` again.
-    global messages, active
+    turn = trace.Trace(message.text)
+    # Naming a persona is an override; the router does not overrule it.
+    name = message.persona or router.route(
+        client(), message.text, episodic.current_thread(personas.DEFAULT),
+        personas.all(), turn,
+    )
     try:
-        persona = personas.load(message.persona or active)
+        persona = personas.load(name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # run_turn appends as it goes. Handing it the live list means a failure
-    # mid-loop leaves a tool_use block with no matching tool_result behind, and
-    # the API rejects every turn after that until the process restarts. Build
-    # the turn on a copy and adopt it only once it has come back whole.
-    working = [*messages, {"role": "user", "content": message.text}]
-    turn = trace.Trace(message.text)
+    messages = [
+        *episodic.recall(persona.name),
+        {"role": "user", "content": message.text},
+    ]
     try:
         reply = agent.run_turn(
-            client(), working, turn, persona, agent.build_system(message.text, turn, persona)
+            client(), messages, turn, persona,
+            agent.build_system(message.text, turn, persona),
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"the turn failed: {exc}") from exc
-    messages = working
-    # Only a request that named a persona moves the default. Writing it back on
-    # every turn also undoes a switch that landed while this one was running:
-    # the click is acknowledged, the panel repaints, and then a turn that
-    # started before it quietly puts the old default back.
-    if message.persona:
-        active = persona.name
+
+    # Nothing to adopt on failure: the turn's messages were a local list, and
+    # these two writes are the only thing that makes the turn part of a thread.
     trace_id = turn.finish(reply)
     episodic.save(session, "user", message.text, trace_id, persona.name)
     episodic.save(session, "assistant", reply, trace_id, persona.name)
     return {
         "reply": reply,
         "trace_id": trace_id,
-        "working_memory": len(messages),
+        "working_memory": len(episodic.recall(episodic.current_thread(personas.DEFAULT))),
         "persona": persona.name,
     }
 
@@ -146,7 +138,7 @@ def stats():
         "input_tokens": tin,
         "output_tokens": tout,
         "avg_ms": int(avg),
-        "working_memory": len(messages),
+        "working_memory": len(episodic.recall(episodic.current_thread(personas.DEFAULT))),
         "facts": semantic.count(),
         "gate_retrieve": sum(1 for g in gates if g["retrieve"]),
         "gate_skip": sum(1 for g in gates if not g["retrieve"]),
@@ -220,7 +212,7 @@ def personas_panel():
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {
-        "active": active,
+        "active": episodic.current_thread(personas.DEFAULT),
         "personas": [
             {
                 "name": p.name,
@@ -235,15 +227,6 @@ def personas_panel():
         ],
     }
 
-
-@app.post("/api/persona")
-def set_persona(body: PersonaName):
-    global active
-    try:
-        active = personas.load(body.name).name
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"active": active}
 
 
 @app.get("/api/memory")

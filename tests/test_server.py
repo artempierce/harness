@@ -1,8 +1,20 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from ninja import server
+from ninja import episodic, personas, router, server
 
 client = TestClient(server.app)
+
+
+@pytest.fixture(autouse=True)
+def no_routing(monkeypatch):
+    """Keep the classifier out of the way unless a test is about it.
+
+    The router is itself a model call, so without this it consumes the first
+    response in a StubClient's script and the turn under test gets whatever
+    was meant for it. Tests that ARE about routing override this.
+    """
+    monkeypatch.setattr(router, "route", lambda client, text, current, cast, turn: current)
 
 
 def test_the_page_is_served():
@@ -56,7 +68,6 @@ class ExplodingClient:
 
 
 def test_a_failed_turn_is_reported_not_swallowed(monkeypatch):
-    monkeypatch.setattr(server, "messages", [])
     monkeypatch.setattr(server, "client", ExplodingClient)
     reply = client.post("/api/chat", json={"text": "hi"})
     assert reply.status_code == 502
@@ -64,25 +75,27 @@ def test_a_failed_turn_is_reported_not_swallowed(monkeypatch):
 
 
 def test_a_failed_turn_does_not_poison_working_memory(monkeypatch):
-    # run_turn appends as it goes. If the live list keeps a half-finished turn,
-    # the next request carries a tool_use block with no matching tool_result and
-    # the API rejects every turn from then on, until restart.
-    monkeypatch.setattr(server, "messages", [])
+    # The layer 7 bug this guards: run_turn appends as it goes, so a failure
+    # mid-loop used to leave a tool_use block with no matching tool_result in
+    # shared state, and every later request was rejected until restart. There
+    # is no shared state now — the turn's list is local and only the two writes
+    # below make it part of a thread — so the check is that nothing was
+    # written at all.
     monkeypatch.setattr(server, "client", ExplodingClient)
     client.post("/api/chat", json={"text": "hi"})
-    assert server.messages == []
+    assert episodic.recall("assistant") == []
 
 
 def test_a_good_turn_still_grows_working_memory(monkeypatch):
     from .conftest import StubClient, block, response
 
     stub = StubClient([response([block(type="text", text="four")], "end_turn")])
-    monkeypatch.setattr(server, "messages", [])
     monkeypatch.setattr(server, "client", lambda: stub)
     body = client.post("/api/chat", json={"text": "what is 2+2?"}).json()
     assert body["reply"] == "four"
     assert body["working_memory"] == 2
-    assert len(server.messages) == 2
+    # And both halves are in the thread, so the next turn recalls them.
+    assert len(episodic.recall("assistant")) == 2
 
 
 def test_the_personas_panel_lists_the_cast():
@@ -101,34 +114,26 @@ def test_the_panel_reports_the_tools_the_harness_enforces():
     assert shown["interview-coach"] == list(personas.load("interview-coach").tools)
 
 
-def test_setting_the_persona_changes_the_default(monkeypatch):
-    monkeypatch.setattr(server, "active", "assistant")
-    assert client.post("/api/persona", json={"name": "interview-coach"}).json() == {
-        "active": "interview-coach"
-    }
-    assert client.get("/api/personas").json()["active"] == "interview-coach"
-
-
-def test_an_unknown_persona_is_a_400(monkeypatch):
-    monkeypatch.setattr(server, "active", "assistant")
-    assert client.post("/api/persona", json={"name": "nonesuch"}).status_code == 400
-    # The active persona is unchanged by a failed switch.
-    assert server.active == "assistant"
+def test_an_unknown_persona_is_a_400():
+    # There is no endpoint that sets a default any more — a value the next
+    # message overwrites was a second source of truth waiting to disagree.
+    # Naming a persona on the chat request is the override now.
+    assert client.post("/api/chat", json={"text": "hi", "persona": "nonesuch"}).status_code == 400
 
 
 def test_a_chat_request_can_name_its_persona(monkeypatch):
     from .conftest import StubClient, block, response
 
     stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
-    monkeypatch.setattr(server, "messages", [])
-    monkeypatch.setattr(server, "active", "assistant")
     monkeypatch.setattr(server, "client", lambda: stub)
 
     client.post("/api/chat", json={"text": "hi", "persona": "interview-coach"})
 
     assert [t["name"] for t in stub.seen[0]["tools"]] == ["read_file", "remember"]
-    # Naming a persona on a request also makes it the default for the next one.
-    assert server.active == "interview-coach"
+    # The turn was filed under that persona's thread, and the active thread is
+    # derived from it rather than stored anywhere.
+    assert [m["content"] for m in episodic.recall("interview-coach")] == ["hi", "ok"]
+    assert episodic.current_thread(personas.DEFAULT) == "interview-coach"
 
 
 def test_system_panel_no_longer_carries_a_personas_stub():
@@ -152,28 +157,19 @@ def test_a_broken_persona_file_is_reported_with_its_reason(monkeypatch, tmp_path
     assert "broken" in reply.json()["detail"]
 
 
-def test_a_switch_that_lands_mid_turn_reaches_neither_this_turn_nor_the_next(monkeypatch):
-    # The claim layer 7 rests on: a turn holds a resolved Persona, so a switch
-    # arriving while it is on step 1 of 2 cannot change the toolset underneath
-    # it — and, the other half, the turn must not undo the switch on its way
-    # out.
+def test_a_turn_runs_as_one_persona_from_start_to_finish(monkeypatch):
+    # The claim layer 7 rests on: a turn holds a resolved, frozen Persona, so
+    # nothing arriving while it is on step 1 of 2 can change the toolset
+    # underneath it. Layer 8a strengthened this by deleting the module state a
+    # concurrent request used to be able to move — there is no longer an
+    # `active` name for anything to write to mid-turn.
     from .conftest import StubClient, block, response
 
-    class SwitchesMidTurn(StubClient):
-        def create(self, **kw):
-            if not self.seen:
-                # Exactly what POST /api/persona does, minus the re-entrant
-                # request a TestClient cannot make from inside a handler.
-                server.active = "interview-coach"
-            return super().create(**kw)
-
-    stub = SwitchesMidTurn([
+    stub = StubClient([
         response([block(type="tool_use", id="t1", name="list_files", input={"path": "."})],
                  "tool_use"),
         response([block(type="text", text="done")], "end_turn"),
     ])
-    monkeypatch.setattr(server, "messages", [])
-    monkeypatch.setattr(server, "active", "assistant")
     monkeypatch.setattr(server, "client", lambda: stub)
 
     client.post("/api/chat", json={"text": "list the files"})
@@ -181,7 +177,12 @@ def test_a_switch_that_lands_mid_turn_reaches_neither_this_turn_nor_the_next(mon
     # Both model calls ran as the persona the turn started with.
     for call in stub.seen:
         assert [t["name"] for t in call["tools"]] == ["list_files", "read_file", "remember"]
-    assert server.active == "interview-coach"
+
+
+def test_the_server_holds_no_transcript_of_its_own():
+    # The transcript lives in the database. There is nothing left to race on.
+    assert not hasattr(server, "messages")
+    assert not hasattr(server, "active")
 
 
 def test_the_allowlist_is_reported_as_enforced():
@@ -212,8 +213,6 @@ def test_a_chat_naming_an_unknown_persona_is_refused_before_the_model_is_called(
     # An empty script: if a turn were attempted, create() would raise
     # IndexError rather than passing quietly.
     stub = StubClient([])
-    monkeypatch.setattr(server, "messages", [])
-    monkeypatch.setattr(server, "active", "assistant")
     monkeypatch.setattr(server, "client", lambda: stub)
 
     reply = client.post("/api/chat", json={"text": "hi", "persona": "nonesuch"})
@@ -221,8 +220,10 @@ def test_a_chat_naming_an_unknown_persona_is_refused_before_the_model_is_called(
     assert reply.status_code == 400
     assert "nonesuch" in reply.json()["detail"]
     assert stub.seen == []
-    assert server.messages == []
-    assert server.active == "assistant"
+    # Nothing was written, so nothing moved: the active thread is still derived
+    # from an empty log and falls back to the default.
+    assert episodic.history() == []
+    assert episodic.current_thread(personas.DEFAULT) == personas.DEFAULT
 
 
 def test_a_failed_turn_leaves_nothing_in_episodic_memory(monkeypatch):
@@ -232,7 +233,6 @@ def test_a_failed_turn_leaves_nothing_in_episodic_memory(monkeypatch):
     # — the two stores disagreeing, which is invisible until a turn is refused.
     from ninja import episodic
 
-    monkeypatch.setattr(server, "messages", [])
     monkeypatch.setattr(server, "client", ExplodingClient)
 
     assert client.post("/api/chat", json={"text": "hi"}).status_code == 502
@@ -247,7 +247,6 @@ def test_a_good_turn_writes_both_halves_of_the_exchange_to_the_log(monkeypatch):
     from .conftest import StubClient, block, response
 
     stub = StubClient([response([block(type="text", text="four")], "end_turn")])
-    monkeypatch.setattr(server, "messages", [])
     monkeypatch.setattr(server, "client", lambda: stub)
 
     body = client.post("/api/chat", json={"text": "what is 2+2?"}).json()
@@ -303,3 +302,64 @@ def test_a_persona_file_with_broken_yaml_is_reported_with_its_reason(monkeypatch
     reply = client.get("/api/personas")
     assert reply.status_code == 500
     assert "unclosed" in reply.json()["detail"]
+
+
+def test_a_request_that_names_no_persona_is_routed(monkeypatch):
+    # One chat, several conversations underneath it: the classifier decides
+    # which one an unaddressed message belongs to.
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr(server, "client", lambda: stub)
+    monkeypatch.setattr(router, "route", lambda *a, **k: "interview-coach")
+
+    body = client.post("/api/chat", json={"text": "quiz me"}).json()
+
+    assert body["persona"] == "interview-coach"
+    assert [m["content"] for m in episodic.recall("interview-coach")] == ["quiz me", "ok"]
+
+
+def test_naming_a_persona_skips_the_router(monkeypatch):
+    # An override is an instruction, not a suggestion. The router must not get
+    # a vote on a turn the caller has already addressed.
+    from .conftest import StubClient, block, response
+
+    stub = StubClient([response([block(type="text", text="ok")], "end_turn")])
+    monkeypatch.setattr(server, "client", lambda: stub)
+
+    called = []
+    monkeypatch.setattr(router, "route", lambda *a, **k: called.append(1) or "assistant")
+
+    body = client.post("/api/chat", json={"text": "hi", "persona": "interview-coach"}).json()
+
+    assert called == [], "the router ran despite an explicit persona"
+    assert body["persona"] == "interview-coach"
+
+
+def test_one_thread_does_not_see_another_thread_s_messages(monkeypatch):
+    # The property the module globals could not offer: two conversations, no
+    # bleed. Interrupting one and returning to it is only safe if this holds.
+    from .conftest import StubClient, block, response
+
+    def reply_once():
+        return StubClient([response([block(type="text", text="ok")], "end_turn")])
+
+    for text, persona in [("coach one", "interview-coach"), ("errand", "assistant")]:
+        stub = reply_once()
+        monkeypatch.setattr(server, "client", lambda s=stub: s)
+        client.post("/api/chat", json={"text": text, "persona": persona})
+
+    third = reply_once()
+    monkeypatch.setattr(server, "client", lambda: third)
+    client.post("/api/chat", json={"text": "coach two", "persona": "interview-coach"})
+
+    sent = [m["content"] for m in third.seen[0]["messages"] if isinstance(m["content"], str)]
+    assert "coach one" in sent, "the coach's own thread was not recalled"
+    assert "errand" not in sent, "another thread's message leaked in"
+
+
+def test_the_active_thread_follows_the_last_message():
+    # Derived from the transcript rather than stored beside it, so the two
+    # cannot disagree.
+    episodic.save("s1", "user", "x", None, "interview-coach")
+    assert client.get("/api/personas").json()["active"] == "interview-coach"

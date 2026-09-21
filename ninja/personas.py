@@ -30,7 +30,7 @@ DEFAULT_INSTRUCTIONS = (
 )
 READ_ONLY_TOOLS = ("list_files", "read_file")
 
-REQUIRED ={"name", "description", "tools", "model"}
+REQUIRED = {"name", "description", "tools", "model"}
 
 
 @dataclass(frozen=True)

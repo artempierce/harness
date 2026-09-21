@@ -71,7 +71,26 @@ def connect() -> sqlite3.Connection:
     # every test run instead of only on the machine that wrote them.
     conn.executescript(SCHEMA.read_text())
     migrate(conn)
+    _check_facts_table(conn)
     return conn
+
+
+def _check_facts_table(conn: sqlite3.Connection) -> None:
+    """Refuse a database whose tables do not match this code.
+
+    The version number can lie: another branch's migration with the same number
+    marks this code's migration as already applied while the tables say
+    otherwise. Found the hard way — a database migrated by the parked vectors
+    branch made `facts` a plain table, and every chat then died mid-turn on "no
+    such column: facts". Say what happened at connect instead.
+    """
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'facts'").fetchone()
+    if row and "fts5" not in (row[0] or "").lower():
+        raise RuntimeError(
+            f"the database at {DB} does not match this code: 'facts' is not a "
+            "full-text table, so it was probably migrated by a different branch. "
+            "Restore the right database, or move it aside to start a fresh one."
+        )
 
 
 def price(model: str, input_tokens: int, output_tokens: int) -> float:

@@ -9,6 +9,7 @@ guardrail stops us.
 
 import dataclasses
 import sqlite3
+import sys
 import time
 
 import anthropic
@@ -25,6 +26,10 @@ load_dotenv()
 # The guardrail. The real exit is the model deciding it is done; this is the
 # backstop for when it gets stuck asking for tools in a cycle.
 MAX_STEPS = 6
+
+# Stop reasons where the text that came back is not the whole answer. A list,
+# not "anything but end_turn": pause_turn means resume, not failure.
+CUT_SHORT = ("max_tokens", "refusal", "model_context_window_exceeded")
 
 # MAX_STEPS bounds one loop, not a tree of them: three levels of six steps is
 # up to 216 calls. These bound the tree. MAX_TURN_COST_USD is a guess — the
@@ -119,6 +124,10 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
         # turn its memory, not the turn. Recorded as its own reason so an error
         # is never mistaken for a real "no fact matched".
         retrieve, why, hits = False, f"retrieval error: {exc}", []
+        # Loud, every time: if this is a schema fault rather than a lock, the
+        # turn "works" with memory silently off, and a trace line nobody reads
+        # is how that goes unnoticed for weeks.
+        print(f"  ! retrieval failed, continuing without facts: {exc}", file=sys.stderr)
     trace.gate(retrieve, why, len(hits))
     system = _instructions(persona, 0)
     if not retrieve:
@@ -161,7 +170,7 @@ def run_turn(
             # A reply cut off at the token cap, refused or paused reads as a
             # finished answer if only the text comes back — and it is saved and
             # replayed as one. Say why it stopped in the text itself.
-            if response.stop_reason not in ("end_turn", "stop_sequence"):
+            if response.stop_reason in CUT_SHORT:
                 reply = f"{reply}\n[stopped early: {response.stop_reason}]".strip()
             # An empty reply is saved as the assistant's message and replayed on
             # every later turn in the thread. The API rejects an empty text

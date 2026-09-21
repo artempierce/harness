@@ -27,3 +27,13 @@ Run the first three before pushing; they mirror the PR gate (`.github/workflows/
 - Never relax the security tests in `tests/test_tools.py` (path boundary, hidden-file refusal) to make a feature work — raise it instead.
 - Tests use a throwaway DB and a stubbed model. See `docs/TESTING.md` for what each test file owns and the anti-patterns to avoid.
 - No frameworks in the core loop; the point is to keep it readable.
+
+## Workflow
+
+The ECC plugin (`ecc@ecc`) and superpowers are enabled at user scope, so their skills are already available here. Follow the same loop for every layer or phase (`docs/PLAN.md` says which is next):
+
+1. **Decide:** `superpowers:brainstorming` → a short spec in `docs/superpowers/specs/`, approved before any code.
+2. **Plan:** `ecc:plan` or `superpowers:writing-plans`.
+3. **Build:** a worktree from fresh `origin/main`, test first (`ecc:tdd-workflow`): see the test fail, then fix.
+4. **Review before the PR:** `ecc:python-reviewer` and `ecc:silent-failure-hunter`; add `ecc:security-reviewer` when touching tools or anything injected into a prompt.
+5. **Ship:** the gate commands above, then a PR. The user approves the merge.

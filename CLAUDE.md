@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Ninja: a personal assistant built as a cast of agents, from scratch, one layer at a time (learning project — see `ARCHITECTURE.md`, `docs/PLAN.md`). Python ≥3.11, managed with `uv`. Package is `ninja/`, distribution is `ninja-agent`.
+Ninja: a personal assistant built as a cast of agents, from scratch, one layer at a time (learning project — see `docs/PLAN.md`). Python ≥3.11, managed with `uv`. Package is `ninja/`, distribution is `ninja-agent`.
 
 ## Commands
 

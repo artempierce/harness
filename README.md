@@ -13,32 +13,14 @@ eval harness are a few hundred lines of Python you can read in a sitting. A
 LangChain/LangGraph port lives alongside it in `ninja_lc/`, so the two can be
 compared directly.
 
-**[ARCHITECTURE.md](ARCHITECTURE.md)** describes the whole design, including the
-parts not built yet.
+**[docs/PLAN.md](docs/PLAN.md)** is the one document: what is built, how it works,
+and what comes next.
 
 ---
 
 ## Status
 
-Built layer by layer. Eight of fifteen so far.
-
-| | Layer | |
-|---|---|---|
-| 1 | Bare agent run | ✅ |
-| 2 | Loop, tools, stop condition | ✅ |
-| 3 | Tracing | ✅ |
-| 4 | Episodic memory | ✅ |
-| 5 | Semantic memory + retrieval gate | ✅ |
-| 6 | Dashboard | ✅ |
-| 7 | Personas | ✅ |
-| 8 | Threads and routing | ✅ |
-| 9 | The architect — proposals, no write access | — |
-| 10 | Consolidation | — |
-| 11 | Eval, diagnose, release | — |
-| 12 | LangGraph port | — |
-| 13 | Registry + guarded set | — |
-| 14 | Tool authoring | — |
-| 15 | The build pipeline | — |
+See [docs/PLAN.md](docs/PLAN.md) §2 — it is kept current; this file is not.
 
 ---
 

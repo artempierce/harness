@@ -117,3 +117,27 @@ def test_the_routers_tokens_are_in_the_turns_totals():
     assert turn.input_tokens == 80
     assert turn.output_tokens == 4
     assert turn.cost > 0
+
+
+def test_a_router_on_an_unpriced_model_is_flagged_rather_than_counted_as_free(monkeypatch):
+    # An unpriced model adds nothing to the total, which is indistinguishable
+    # from a free call unless the absence is recorded. Trace.model has carried
+    # this flag since layer 7; the router's call is no different.
+    monkeypatch.setattr(router, "MODEL", "some-model-with-no-price")
+    turn = trace.Trace("x")
+    router.route(StubClient([answer("assistant")]), "hi", "assistant", cast(), turn)
+
+    event = next(e for e in turn.events if e["type"] == "route")
+    assert event["unpriced"] is True
+    assert turn.cost == 0.0
+    # The tokens are still counted even though the money is not.
+    assert turn.input_tokens == 80
+
+
+def test_a_router_on_a_priced_model_is_not_flagged():
+    turn = trace.Trace("x")
+    router.route(StubClient([answer("assistant")]), "hi", "assistant", cast(), turn)
+
+    event = next(e for e in turn.events if e["type"] == "route")
+    assert event["unpriced"] is False
+    assert turn.cost > 0

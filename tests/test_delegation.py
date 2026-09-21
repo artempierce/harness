@@ -509,3 +509,57 @@ def test_the_assistant_offers_the_coach_and_the_coach_is_a_leaf():
     system = agent._instructions(assistant, 0)
     assert "- interview-coach:" in system
     assert "- assistant:" not in system
+
+
+# --- unpriced models: the budget must not read "unknown" as "free" ------------
+
+
+def _unpriced(cast, name="fresh", model="claude-brand-new-9"):
+    cast(name, ["read_file"])
+    path = personas.DIR / name / "PERSONA.md"
+    path.write_text(path.read_text().replace("claude-haiku-4-5", model))
+
+
+def test_delegating_to_an_unpriced_child_is_refused_without_a_call_or_cap(cast):
+    # Fails against: no price check in _delegate (the budget would never trip).
+    _unpriced(cast)
+    cast("helper", ["read_file"])
+    t = trace.Trace("go")
+    client = StubClient([
+        response(
+            [block(type="tool_use", id=f"d{i}", name="delegate",
+                   input={"persona": n, "task": "t"})
+             for i, n in enumerate(["fresh"] * 3 + ["helper"])],
+            "tool_use",
+        ),
+        text("a"),
+        text("end"),
+    ])
+    run(client, t=t)
+    results = results_of(client.seen[-1])
+    assert [r["is_error"] for r in results] == [True, True, True, False]
+    assert len(client.seen) == 3, "only the priced child made a call"
+    assert [e["persona"] for e in t.events if e["type"] == "delegate"] == ["helper"]
+
+
+def test_the_refusal_names_the_persona_and_model(cast):
+    _unpriced(cast)
+    with pytest.raises(ValueError, match=r"fresh runs on claude-brand-new-9"):
+        agent._delegate(StubClient([]), trace.Trace("x"), boss(), 0, "fresh", "t")
+
+
+def test_an_unpriced_parent_cannot_delegate_to_a_priced_child(cast):
+    # Fails against: checking only the child's model.
+    cast("helper", ["read_file"])
+    parent = boss(model="claude-brand-new-9")
+    client = StubClient([delegate_call("d1", "helper"), text("ok")])
+    run(client, parent)
+    (result,) = results_of(client.seen[1])
+    assert result["is_error"] and "boss runs on claude-brand-new-9" in result["content"]
+    assert len(client.seen) == 2
+
+
+def test_an_unpriced_persona_that_never_delegates_still_runs():
+    # Fails against: a budget or price check applied at depth 0 in run_turn.
+    client = StubClient([text("hi")])
+    assert run(client, a_persona(model="claude-brand-new-9"))[0] == "hi"

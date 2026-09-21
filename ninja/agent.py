@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, tools
 from ninja.personas import Persona
-from ninja.trace import Trace
+from ninja.trace import PRICING, Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
 # touches the repo.
@@ -188,6 +188,15 @@ def _delegate(client, trace: Trace, parent: Persona, depth: int, name: str, task
         raise ValueError(f"at most {MAX_DELEGATIONS_PER_TURN} delegations per turn.")
     # Unknown and path-like names are refused inside load(), before any read.
     child = _reduced(personas.load(name), child_depth)
+    # An unpriced model adds $0 to the trace, so the budget would never trip.
+    # A lone persona is the trace's business to flag; fan-out is where an
+    # unbounded spend becomes multiplicative, so this is where it fails closed.
+    for who in (parent, child):
+        if who.model not in PRICING:
+            raise ValueError(
+                f"{who.name} runs on {who.model}, which has no price, so its spend "
+                "cannot be held to the turn budget. Price it in trace.PRICING first."
+            )
     # Refuse rather than trim: quietly dropping a tool changes what the persona
     # does without anyone having decided that.
     extra = _excess(child, child_depth, parent)

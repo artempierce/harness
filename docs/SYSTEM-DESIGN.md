@@ -341,23 +341,37 @@ loop.
 |---|---|---|---|
 | Gateway | Telegram / WhatsApp / Slack | CLI + FastAPI cockpit | ⚠️ different surface, same role |
 | Working memory | assembled per run | assembled per run | ✅ match |
-| Loop + tools | tool calls, end-loop guardrails | same, `MAX_STEPS = 6` | ✅ match |
+| Loop + tools | tool calls, `max_iterations = 10` | same shape, `MAX_STEPS = 6` | ✅ same design, different cap |
+| Retrieval gate | **small-model call** decides whether to retrieve *and* writes the search query; fails open | keyword match, skips when nothing matches | ⚠️ **differs** — see below |
 | Procedural | `~/.jarvis/skills/*/SKILL.md` | `personas/*/PERSONA.md` | ⚠️ partial — no SKILL.md yet (L14) |
-| **Semantic** | **keyword top-k, no embedding** | **FTS5 keyword top-k** | ✅ **match** |
+| **Semantic** | **FTS5 keyword top-k by default; pluggable** (`WAKU_SEMANTIC_STORE`: supabase/pgvector, mem0, langmem, zep) | FTS5 keyword top-k, one backend | ✅ default matches · ❌ no pluggable backends |
 | Episodic | dated events + chat history | `chat_log` | ✅ match |
 | Storage | `state.db` (SQLite + FTS5) | `.ninja/state.db` (SQLite + FTS5) | ✅ match |
 | Consolidation | after N chats → distill to facts | — | ❌ layer 10 |
 | Sub-agents | `delegate_task` | — | ❌ layer 8b |
+| Tools | ~17 modules (calendar, GitHub, MCP, search, notes…) | 3 (`list_files`, `read_file`, `remember`) | ❌ far smaller |
+| Size | ~28,600 lines of Python | ~1,400 | ⚠️ ~20× — waku is a product, ninja a study copy |
 | Cron | scheduled runs | — | ❌ not planned yet |
 | Trace | 1 per run | 1 per run | ✅ match |
 | Eval / judge | LLM-as-judge → scores | — | ❌ layer 11 |
 | Observe | tokens, latency, errors | tokens, cost, duration | ⚠️ partial |
 | Diagnose → Gate → Release | full loop | — | ❌ layer 11 |
 
-**The single most important row is the semantic one**, and it is a match. Waku
-uses keyword top-k *with no embedding*. So does `main`. A branch replacing that
-with a vector store has been parked — see §10 and
+**The semantic row matches on the default, not on the whole design.** Waku's
+default is FTS5 keyword search with no embedding, and so is `main`'s. But waku
+treats that as "a boring default and a documented upgrade": pgvector and three
+third-party memory services plug in behind the same interface. The parked vector
+branch was therefore not a departure from waku's design — it was the upgrade
+path, built before the base was finished. See §10 and
 `docs/superpowers/specs/2026-09-21-layer-5-vectors-PARKED.md`.
+
+**The gate differs, and it is the more important difference.** Waku's gate is a
+small-model call (`waku/memory/retrieval_gate.py`) that answers "does this
+message need the user's memory?" and writes the search query itself. It fails
+*open*: if the gate errors, it retrieves anyway, on the reasoning that a stale
+memory beats a lost one. Ninja's gate is a keyword match that runs the search
+first and skips when nothing matches. Ninja's is free; waku's costs one small
+call per turn but can turn "when am I meeting Alex?" into a good query.
 
 ### The real gap
 Ninja's **inner loop is close to complete**. Its **outer loop does not exist**:
@@ -427,7 +441,8 @@ and gate no better.
 
 **Conclusion: ranking is cheap and solvable; judging relevance is not a
 similarity problem.** Which is a good argument for cheap keyword retrieval plus
-an LLM judgement — i.e. the reference design.
+an LLM judgement — and that is what waku's gate does: a small model decides
+whether to retrieve, and keyword search does the retrieving.
 
 **A second finding, backend-independent:** a fact-to-fact dedup threshold at
 0.85 silently destroys distinct facts — *"standup at 9am"* vs *"standup at

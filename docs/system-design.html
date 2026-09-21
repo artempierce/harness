@@ -512,13 +512,16 @@ You are a helpful assistant with read access to this project's files.</code></pr
     <tbody>
       <tr><td>Gateway</td><td>Telegram / WhatsApp / Slack</td><td>CLI + FastAPI cockpit</td><td><span class="chip partial">different surface</span></td></tr>
       <tr><td>Working memory</td><td>assembled per run</td><td>assembled per run</td><td><span class="chip ok">match</span></td></tr>
-      <tr><td>Loop + tools</td><td>end-loop guardrails</td><td><code>MAX_STEPS = 6</code></td><td><span class="chip ok">match</span></td></tr>
+      <tr><td>Loop + tools</td><td><code>max_iterations = 10</code></td><td><code>MAX_STEPS = 6</code></td><td><span class="chip ok">same design</span></td></tr>
+      <tr><td><strong>Retrieval gate</strong></td><td><strong>small-model call; writes the query; fails open</strong></td><td>keyword match; skips on no hit</td><td><span class="chip partial">differs</span></td></tr>
       <tr><td>Procedural</td><td><code>SKILL.md</code> per skill</td><td><code>PERSONA.md</code> per persona</td><td><span class="chip partial">no SKILL.md yet</span></td></tr>
-      <tr><td><strong>Semantic</strong></td><td><strong>keyword top-k, no embedding</strong></td><td><strong>FTS5 keyword top-k</strong></td><td><span class="chip ok">match</span></td></tr>
+      <tr><td><strong>Semantic</strong></td><td><strong>FTS5 by default; pluggable</strong> (pgvector, mem0, langmem, zep)</td><td><strong>FTS5, one backend</strong></td><td><span class="chip partial">default matches</span></td></tr>
       <tr><td>Episodic</td><td>dated events + history</td><td><code>chat_log</code></td><td><span class="chip ok">match</span></td></tr>
       <tr><td>Storage</td><td><code>state.db</code> SQLite + FTS5</td><td><code>.ninja/state.db</code> SQLite + FTS5</td><td><span class="chip ok">match</span></td></tr>
       <tr><td>Consolidation</td><td>after N chats → distil</td><td>—</td><td><span class="chip todo">layer 10</span></td></tr>
       <tr><td>Sub-agents</td><td><code>delegate_task</code></td><td>—</td><td><span class="chip todo">layer 8b</span></td></tr>
+      <tr><td>Tools</td><td>~17 modules</td><td>3</td><td><span class="chip todo">far smaller</span></td></tr>
+      <tr><td>Size</td><td>~28,600 lines</td><td>~1,400</td><td><span class="chip partial">~20×</span></td></tr>
       <tr><td>Cron</td><td>scheduled runs</td><td>—</td><td><span class="chip todo">unplanned</span></td></tr>
       <tr><td>Trace</td><td>1 per run</td><td>1 per run</td><td><span class="chip ok">match</span></td></tr>
       <tr><td>Eval / judge</td><td>LLM-as-judge → scores</td><td>—</td><td><span class="chip todo">layer 11</span></td></tr>
@@ -526,7 +529,8 @@ You are a helpful assistant with read access to this project's files.</code></pr
     </tbody>
   </table></div>
   <div class="callout">
-    <p><strong>The most important row is the semantic one, and it is a match.</strong> Waku uses keyword top-k with <em>no embedding</em>. So does this system. A branch replacing that with a vector store has been parked.</p>
+    <p><strong>The semantic row matches on the default, not on the whole design.</strong> Waku's default is FTS5 keyword search with no embedding, and so is this system's. But waku calls that “a boring default and a documented upgrade” — pgvector and three memory services plug in behind the same interface. The parked vector branch was the upgrade path, built before the base was finished.</p>
+    <p><strong>The gate differs, and it matters more.</strong> Waku's gate is a small-model call that decides whether to retrieve <em>and writes the search query</em>; it fails open, retrieving anyway if the gate errors. This system's gate is a free keyword match that skips when nothing hits. Waku pays one small call per turn to get better queries.</p>
     <p>The inner loop here is close to complete. The outer loop does not exist. That is where the next work belongs, and it maps exactly onto layers 10 and 11.</p>
   </div>
 </section>
@@ -572,7 +576,7 @@ You are a helpful assistant with read access to this project's files.</code></pr
   </table></div>
   <p>Never positive. Margin and z-score separate <em>worse</em>. Cross-encoders rank better and gate no better.</p>
   <div class="callout">
-    <p><strong>Ranking is cheap and solvable; judging relevance is not a similarity problem.</strong> Which is a good argument for cheap keyword retrieval plus an LLM judgement — that is, the reference design.</p>
+    <p><strong>Ranking is cheap and solvable; judging relevance is not a similarity problem.</strong> Which is a good argument for cheap keyword retrieval plus an LLM judgement — and that is what waku's gate does: a small model decides whether to retrieve, keyword search does the retrieving.</p>
   </div>
   <p><strong>A second finding, independent of backend.</strong> A fact-to-fact dedup threshold at 0.85 silently destroys distinct facts: <em>“standup is at 9am”</em> and <em>“standup is at 10am”</em> score <strong>0.947</strong>. The only safe window measured was 0.947–0.981. If dedup is ever built, on any backend, it needs that calibration or it will quietly eat real data.</p>
 </section>

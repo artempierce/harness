@@ -8,6 +8,7 @@ guardrail stops us.
 """
 
 import dataclasses
+import sqlite3
 import time
 
 import anthropic
@@ -111,7 +112,13 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
     The persona supplies the instructions; the retrieval gate decides whether
     facts are worth their tokens on top of them.
     """
-    retrieve, why, hits = semantic.gate(user_input)
+    try:
+        retrieve, why, hits = semantic.gate(user_input)
+    except sqlite3.Error as exc:
+        # Facts are optional context: a locked or corrupt database costs the
+        # turn its memory, not the turn. Recorded as its own reason so an error
+        # is never mistaken for a real "no fact matched".
+        retrieve, why, hits = False, f"retrieval error: {exc}", []
     trace.gate(retrieve, why, len(hits))
     system = _instructions(persona, 0)
     if not retrieve:
@@ -151,6 +158,11 @@ def run_turn(
 
         if response.stop_reason != "tool_use":
             reply = "".join(b.text for b in response.content if b.type == "text")
+            # A reply cut off at the token cap, refused or paused reads as a
+            # finished answer if only the text comes back — and it is saved and
+            # replayed as one. Say why it stopped in the text itself.
+            if response.stop_reason not in ("end_turn", "stop_sequence"):
+                reply = f"{reply}\n[stopped early: {response.stop_reason}]".strip()
             # An empty reply is saved as the assistant's message and replayed on
             # every later turn in the thread. The API rejects an empty text
             # block, so the thread would fail until the message scrolled out of

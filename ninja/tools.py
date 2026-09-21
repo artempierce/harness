@@ -12,6 +12,11 @@ from ninja import rules, semantic
 # The model chooses the path, so the path needs a boundary.
 ROOT = Path(__file__).resolve().parent.parent
 
+# What a file read may put in the transcript. Everything a tool returns is
+# re-sent on every later step of the turn, so a big file is a cost paid again
+# on each round trip.
+MAX_READ = 20_000
+
 SCHEMAS = [
     {
         "name": "list_files",
@@ -132,6 +137,12 @@ def run(
     # appears anywhere in it. Refuse the shape rather than the symptom.
     if isinstance(allowed, str) or name not in allowed:
         raise ValueError(f"{name} is not in this persona's allowlist")
+    # The model can emit any JSON for an argument. A wrong type is its mistake,
+    # so refuse it here as one instead of letting it surface as a TypeError or
+    # a database error that the loop files under "our bug".
+    for key in ("path", "fact", "rule"):
+        if key in args and not isinstance(args[key], str):
+            raise ValueError(f"{key} must be a string")
     if name == "list_files":
         entries = _resolve(args["path"]).iterdir()
         return "\n".join(
@@ -142,7 +153,10 @@ def run(
             )
         )
     if name == "read_file":
-        return _resolve(args["path"]).read_text()
+        text = _resolve(args["path"]).read_text()
+        if len(text) > MAX_READ:
+            return f"{text[:MAX_READ]}\n[truncated: {len(text) - MAX_READ} more characters]"
+        return text
     if name == "remember":
         semantic.remember(args["fact"])
         return f"remembered: {args['fact']}"

@@ -126,3 +126,41 @@ def test_a_symlink_to_a_hidden_file_is_refused(tmp_path, monkeypatch):
     (root / "config.txt").symlink_to(root / ".env")
     with pytest.raises(ValueError, match="hidden files"):
         tools.run("read_file", {"path": "config.txt"}, ALL)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        ("read_file", {"path": 5}),
+        ("list_files", {"path": None}),
+        ("remember", {"fact": 5}),
+        ("add_rule", {"rule": ["not", "a", "string"]}),
+    ],
+)
+def test_a_non_string_argument_is_refused_as_a_tool_error(name, args):
+    # A model can emit any JSON for an argument. A wrong type is its mistake and
+    # belongs back in the transcript as an error, not as a TypeError or a
+    # sqlite3 error that takes the whole turn down.
+    with pytest.raises(ValueError, match="must be a string"):
+        tools.run(name, args, ALL, persona="assistant")
+
+
+def test_a_large_file_is_truncated_not_sent_whole(tmp_path, monkeypatch):
+    # Whatever a tool returns is in the history, and the history is re-sent on
+    # every later step — a big file is a cost paid again on each round trip.
+    root = tmp_path.resolve()
+    monkeypatch.setattr(tools, "ROOT", root)
+    (root / "big.log").write_text("x" * (tools.MAX_READ * 5))
+
+    out = tools.run("read_file", {"path": "big.log"}, ALL)
+
+    assert len(out) < tools.MAX_READ * 2
+    assert "truncated" in out
+
+
+def test_a_small_file_is_returned_whole(tmp_path, monkeypatch):
+    root = tmp_path.resolve()
+    monkeypatch.setattr(tools, "ROOT", root)
+    (root / "small.txt").write_text("hello")
+
+    assert tools.run("read_file", {"path": "small.txt"}, ALL) == "hello"

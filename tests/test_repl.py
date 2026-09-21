@@ -142,3 +142,69 @@ def test_an_explicit_persona_overrides_the_router(monkeypatch):
         "a coaching question",
         "ok",
     ]
+
+
+def _drive_main(monkeypatch, client, lines):
+    """Run the real REPL with a scripted client and scripted input."""
+    monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: client)
+    typed = iter([*lines, ""])
+
+    def fake_input(prompt=""):
+        try:
+            return next(typed)
+        except StopIteration as end:
+            raise EOFError from end
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    agent.main()
+
+
+def _thread():
+    from ninja import episodic
+
+    return [m["content"] for m in episodic.recall("assistant", limit=50)]
+
+
+def test_a_finished_turn_saves_both_halves_in_one_write(monkeypatch):
+    # Two separate writes can be torn apart, leaving user, user, assistant. The
+    # server already writes the pair in one transaction; the REPL must too.
+    from .conftest import StubClient, block, response
+
+    def refuse(*a, **k):
+        raise AssertionError("episodic.save writes one half; use save_exchange")
+
+    monkeypatch.setattr(agent.episodic, "save", refuse)
+    stub = StubClient([response([block(type="text", text="hi back")], "end_turn")])
+
+    _drive_main(monkeypatch, stub, ["/persona assistant", "hello"])
+
+    assert _thread() == ["hello", "hi back"]
+
+
+class _FailingClient:
+    def __init__(self):
+        self.messages = self
+
+    def create(self, **kw):
+        raise RuntimeError("boom")
+
+
+def test_an_api_error_does_not_end_the_session(monkeypatch, capsys):
+    # The turn's earlier spend is already real. The REPL must survive, say what
+    # went wrong, and carry on — as the server does with a 502.
+    _drive_main(monkeypatch, _FailingClient(), ["/persona assistant", "hello", "again"])
+
+    assert "boom" in capsys.readouterr().out
+
+
+def test_a_failed_turn_is_still_recorded_and_saves_nothing(monkeypatch):
+    from ninja.trace import connect
+
+    _drive_main(monkeypatch, _FailingClient(), ["/persona assistant", "hello", "again"])
+
+    conn = connect()
+    replies = [r[0] for r in conn.execute("SELECT reply FROM traces ORDER BY id")]
+    conn.close()
+    assert len(replies) == 2
+    assert all(r.startswith("[failed:") for r in replies)
+    assert _thread() == []

@@ -13,7 +13,7 @@ def test_a_persona_loads_from_disk():
     assert coach.model
     # The body after the frontmatter is the system prompt.
     assert "coach" in coach.instructions.lower()
-    assert coach.tools == ("read_file", "remember")
+    assert coach.tools == ("read_file", "remember", "add_rule")
 
 
 def test_the_description_reads_like_a_tool_description():
@@ -25,7 +25,7 @@ def test_the_description_reads_like_a_tool_description():
 def test_schemas_are_filtered_to_the_allowlist():
     coach = personas.load("interview-coach")
     names = [s["name"] for s in coach.schemas()]
-    assert names == ["read_file", "remember"]
+    assert names == ["read_file", "remember", "add_rule"]
     # list_files exists but this persona never sees it.
     assert "list_files" in [s["name"] for s in tools.SCHEMAS]
     assert "list_files" not in names

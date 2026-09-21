@@ -7,7 +7,7 @@ run() is what actually happens. The model never executes anything itself.
 from collections.abc import Sequence
 from pathlib import Path
 
-from ninja import semantic
+from ninja import rules, semantic
 
 # The model chooses the path, so the path needs a boundary.
 ROOT = Path(__file__).resolve().parent.parent
@@ -60,6 +60,26 @@ SCHEMAS = [
             "required": ["fact"],
         },
     },
+    {
+        "name": "add_rule",
+        "description": (
+            "Save a standing preference about how this person wants you to behave, "
+            "so it applies in every later conversation. Use when they tell you how "
+            "to act from now on. Do not use for facts about them (use remember) or "
+            "for one-off requests."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule": {
+                    "type": "string",
+                    "description": "One short instruction on a single line, e.g. "
+                    "'Keep answers under five lines.'",
+                }
+            },
+            "required": ["rule"],
+        },
+    },
 ]
 
 
@@ -74,7 +94,7 @@ def _resolve(path: str) -> Path:
     return target
 
 
-def run(name: str, args: dict, allowed: Sequence[str]) -> str:
+def run(name: str, args: dict, allowed: Sequence[str], *, persona: str | None = None) -> str:
     # The allowlist is enforced here as well as by filtering the schemas,
     # because filtering is advisory: a model that has seen a tool name earlier
     # in the conversation can still emit it. One gate, first — a per-branch
@@ -98,4 +118,6 @@ def run(name: str, args: dict, allowed: Sequence[str]) -> str:
     if name == "remember":
         semantic.remember(args["fact"])
         return f"remembered: {args['fact']}"
+    if name == "add_rule":
+        return rules.add_rule(persona, args["rule"])
     raise ValueError(f"unknown tool: {name}")

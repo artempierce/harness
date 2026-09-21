@@ -1,0 +1,72 @@
+name: mutation testing
+
+# Coverage answers "did this line run". This answers "would anything notice if
+# it ran differently" — it changes the code and checks whether a test goes red.
+#
+# That is the check this repo keeps needing. Several tests here have looked
+# green while proving nothing: one asserted on a list the function under test
+# never received, another checked only that a panel returned 200 and so passed
+# against a panel answering with an error inside it. Both had full coverage.
+#
+# Manual, because mutmut runs the whole suite once per mutant — minutes, not
+# the seconds the pull request gate is allowed to take.
+on:
+  workflow_dispatch:
+    inputs:
+      mutants:
+        description: "Mutants to run, e.g. ninja.tools — blank means all of ninja/"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  mutate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+          python-version: "3.12"
+
+      - name: install dependencies
+        run: uv sync --dev
+
+      # A mutant that survives is a line the suite does not really test. The
+      # run is not gated on zero survivors — some mutants are equivalent, and
+      # chasing those writes tests that assert on accidents. The output is for
+      # reading, which is why it goes to the job summary.
+      - name: run mutmut
+        id: mutmut
+        continue-on-error: true
+        # mutmut 3.x takes mutant names positionally; there is no
+        # --paths-to-mutate flag. What to mutate comes from source_paths in
+        # pyproject.toml, and a name here narrows the run to a module.
+        run: |
+          set -o pipefail
+          uv run mutmut run ${{ inputs.mutants }} 2>&1 | tee /tmp/mutmut.txt
+
+      - name: surviving mutants
+        if: always()
+        run: |
+          {
+            echo '## Mutation testing'
+            echo ''
+            echo 'A surviving mutant is a change to the code that no test noticed.'
+            echo 'Killed mutants are not listed — `mutmut results` prints only the'
+            echo 'ones that got away, so an empty list is the good outcome.'
+            echo ''
+            echo 'Expect survivors. Many are string-literal changes that no'
+            echo 'assertion should reasonably pin, and some are equivalent'
+            echo 'mutants that cannot be killed at all. Read this list; do not'
+            echo 'chase it to zero.'
+            echo ''
+            echo '```'
+            uv run mutmut results 2>&1 | tail -60 || tail -40 /tmp/mutmut.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

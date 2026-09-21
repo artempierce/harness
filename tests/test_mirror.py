@@ -261,8 +261,9 @@ def test_the_repl_mirrors_after_consolidation_and_the_save(monkeypatch):
 
     monkeypatch.setattr("builtins.input", fake_input)
     agent.main()
-    # REPL saves user and assistant separately; the mirror follows both.
-    assert order == ["consolidate", "save", "save", "mirror"]
+    # The REPL saves the exchange in one write, like the server; the mirror
+    # follows it.
+    assert order == ["consolidate", "save", "mirror"]
     assert mirror.PATH.exists()
 
 

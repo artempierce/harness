@@ -71,7 +71,12 @@ def run_turn(
         messages.append({"role": "assistant", "content": response.content})
 
         if response.stop_reason != "tool_use":
-            return "".join(b.text for b in response.content if b.type == "text")
+            reply = "".join(b.text for b in response.content if b.type == "text")
+            # An empty reply is saved as the assistant's message and replayed on
+            # every later turn in the thread. The API rejects an empty text
+            # block, so the thread would fail until the message scrolled out of
+            # the recall window — and it is on disk, so a restart does not help.
+            return reply or f"[no text in the reply: stop_reason={response.stop_reason}]"
 
         results = []
         for block in response.content:
@@ -188,13 +193,23 @@ def main() -> None:
         # The transcript comes from the thread, not from a list carried across
         # switches. Returning to a conversation finds it as it was.
         messages = [*episodic.recall(persona.name), {"role": "user", "content": user_input}]
-        reply = run_turn(client, messages, turn, persona,
-                         build_system(user_input, turn, persona))
+        try:
+            reply = run_turn(client, messages, turn, persona,
+                             build_system(user_input, turn, persona))
+        except Exception as exc:
+            # Record the turn before moving on, as the server does: the router
+            # call and every model call before the failure are already paid
+            # for, and a failed turn that leaves no trace looks free. Nothing
+            # is saved to the thread — the messages were a local list.
+            turn.finish(f"[failed: {exc}]")
+            print(f"  the turn failed: {exc}\n")
+            continue
         consolidation.run_if_due(client, turn)
         trace_id = turn.finish(reply)
 
-        episodic.save(session, "user", user_input, trace_id, persona.name)
-        episodic.save(session, "assistant", reply, trace_id, persona.name)
+        # One transaction: two separate saves can be torn apart, leaving the
+        # thread reading user, user, assistant, which the API rejects.
+        episodic.save_exchange(session, user_input, reply, trace_id, persona.name)
         mirror.write()
 
         print(f"\n{persona.name}> {reply}")

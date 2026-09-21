@@ -174,3 +174,25 @@ def test_the_step_cap_leaves_a_transcript_the_next_turn_can_use():
     reply = agent.run_turn(client, messages, trace.Trace("x"), a_persona())
 
     assert messages[-1] == {"role": "assistant", "content": reply}
+
+
+def test_a_non_string_tool_argument_comes_back_as_an_error_not_a_crash():
+    client = StubClient([tool_call("t1", "read_file", {"path": 5}), text("My mistake.")])
+    messages = [{"role": "user", "content": "read it"}]
+    assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "My mistake."
+
+    result = messages[2]["content"][0]
+    assert result["is_error"] is True
+    assert "must be a string" in result["content"]
+
+
+def test_a_reply_with_no_text_is_not_returned_empty():
+    # "" gets saved as the assistant's message and replayed on every later turn
+    # in that thread. The API rejects an empty text block, so the thread would
+    # fail until the message scrolled out of the recall window.
+    client = StubClient([response([], "end_turn")])
+    messages = [{"role": "user", "content": "hello"}]
+    reply = agent.run_turn(client, messages, trace.Trace("x"), a_persona())
+
+    assert reply.strip() != ""
+    assert "end_turn" in reply

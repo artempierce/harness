@@ -12,7 +12,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import consolidation, episodic, personas, router, rules, semantic, tools
+from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, tools
 from ninja.personas import Persona
 from ninja.trace import Trace
 
@@ -195,6 +195,7 @@ def main() -> None:
 
         episodic.save(session, "user", user_input, trace_id, persona.name)
         episodic.save(session, "assistant", reply, trace_id, persona.name)
+        mirror.write()
 
         print(f"\n{persona.name}> {reply}")
         print(

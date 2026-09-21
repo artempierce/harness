@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from ninja import agent, consolidation, episodic, personas, router, semantic, tools, trace
+from ninja import agent, consolidation, episodic, mirror, personas, router, semantic, tools, trace
 
 UI = Path(__file__).resolve().parent.parent / "ui"
 
@@ -93,6 +93,7 @@ def chat(message: Message):
     consolidation.run_if_due(client(), turn)
     trace_id = turn.finish(reply)
     episodic.save_exchange(session, message.text, reply, trace_id, persona.name)
+    mirror.write()
     return {
         "reply": reply,
         "trace_id": trace_id,

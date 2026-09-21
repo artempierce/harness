@@ -3,7 +3,7 @@ name: interview-coach
 description: Use to rehearse for an interview — practice questions, follow-ups
   on thin answers, and tracking what still needs revising. Not for looking
   things up.
-tools: [read_file, remember]
+tools: [read_file, remember, add_rule]
 model: claude-haiku-4-5
 ---
 

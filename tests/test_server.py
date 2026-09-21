@@ -129,7 +129,7 @@ def test_a_chat_request_can_name_its_persona(monkeypatch):
 
     client.post("/api/chat", json={"text": "hi", "persona": "interview-coach"})
 
-    assert [t["name"] for t in stub.seen[0]["tools"]] == ["read_file", "remember"]
+    assert [t["name"] for t in stub.seen[0]["tools"]] == ["read_file", "remember", "add_rule"]
     # The turn was filed under that persona's thread, and the active thread is
     # derived from it rather than stored anywhere.
     assert [m["content"] for m in episodic.recall("interview-coach")] == ["hi", "ok"]
@@ -176,7 +176,9 @@ def test_a_turn_runs_as_one_persona_from_start_to_finish(monkeypatch):
 
     # Both model calls ran as the persona the turn started with.
     for call in stub.seen:
-        assert [t["name"] for t in call["tools"]] == ["list_files", "read_file", "remember"]
+        assert [t["name"] for t in call["tools"]] == [
+            "list_files", "read_file", "remember", "add_rule"
+        ]
 
 
 def test_the_server_holds_no_transcript_of_its_own():

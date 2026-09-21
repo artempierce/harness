@@ -4,7 +4,7 @@ SCHEMAS is what the model sees — it picks a tool by reading these descriptions
 run() is what actually happens. The model never executes anything itself.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from ninja import rules, semantic
@@ -80,6 +80,27 @@ SCHEMAS = [
             "required": ["rule"],
         },
     },
+    {
+        "name": "delegate",
+        "description": (
+            "Hand a self-contained job to another persona and get its answer back. "
+            "It starts with a blank slate: it sees only the task you write here, not "
+            "this conversation or anything you know about the user, so put everything "
+            "it needs in the task. It can read but not write, and it may not hold "
+            "tools you do not have."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "persona": {"type": "string", "description": "Name of the persona to hand it to."},
+                "task": {
+                    "type": "string",
+                    "description": "The complete brief, including the shape of answer you want.",
+                },
+            },
+            "required": ["persona", "task"],
+        },
+    },
 ]
 
 
@@ -94,7 +115,14 @@ def _resolve(path: str) -> Path:
     return target
 
 
-def run(name: str, args: dict, allowed: Sequence[str], *, persona: str | None = None) -> str:
+def run(
+    name: str,
+    args: dict,
+    allowed: Sequence[str],
+    *,
+    persona: str | None = None,
+    spawn: Callable[[str, str], str] | None = None,
+) -> str:
     # The allowlist is enforced here as well as by filtering the schemas,
     # because filtering is advisory: a model that has seen a tool name earlier
     # in the conversation can still emit it. One gate, first — a per-branch
@@ -120,4 +148,16 @@ def run(name: str, args: dict, allowed: Sequence[str], *, persona: str | None = 
         return f"remembered: {args['fact']}"
     if name == "add_rule":
         return rules.add_rule(persona, args["rule"])
+    if name == "delegate":
+        # `spawn` is handed in rather than imported: starting a loop is
+        # agent.py's job, and agent imports this module. Both arguments come
+        # from the model, so a null or a number is checked here — .get() only
+        # supplies a default for an absent key, and Path() on a non-string
+        # would be a TypeError, which is not one of the model's mistakes we catch.
+        target, task = args.get("persona"), args.get("task")
+        if not isinstance(target, str) or not isinstance(task, str) or not task.strip():
+            raise ValueError("delegate needs a persona name and a non-empty task, both text.")
+        if spawn is None:
+            raise ValueError("delegate needs a runtime to spawn into.")
+        return spawn(target, task)
     raise ValueError(f"unknown tool: {name}")

@@ -200,3 +200,14 @@ The recommended option was taken for each of §6:
 2. **D1**, the `SKILL.md` loader: spec approved first, then `skills/<name>/SKILL.md`
    matched per message by keyword and injected in `build_system`.
 3. **D2** (`create_skill`, as a proposal you approve), then **E**, then **F**.
+
+### Candidate to test, not a decision
+
+**A System-1 decision model (Typesafe AI's Jev)** for the cheap yes/no and pick-one
+calls: persona routing, the B2 retrieval gate, a "worth remembering?" filter before
+consolidation, and gating risky tool calls. It returns probabilities, not text, so it
+cannot summarise or reason; those stay on Claude. Try it in shadow mode first — replay
+routing decisions already in `.ninja/state.db` and compare with the current router —
+and judge it in E1. Open questions: access (early access at the time of writing), the
+HTTP endpoint, and that user messages and facts would leave for a third party. The
+speed and cost claims are the vendor's.

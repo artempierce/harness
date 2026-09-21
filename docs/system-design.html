@@ -1,0 +1,588 @@
+<title>Ninja Harness Anatomy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600;700&display=swap">
+<style>
+  :root{
+    --bg:#F6F7F9; --surface:#FFFFFF; --sunk:#EFF1F5;
+    --line:#DCE0E8; --line-soft:#E8EBF1;
+    --text:#171A21; --muted:#5A6373;
+    --accent:#2F5FD0; --accent-soft:#E7EEFC;
+    --ok:#1C7A4E; --ok-soft:#E2F3EA;
+    --partial:#9C6209; --partial-soft:#FBEFDC;
+    --todo:#6B7280; --todo-soft:#ECEEF2;
+    --serif:"IBM Plex Serif",Georgia,serif;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#0F1217; --surface:#161A21; --sunk:#1B2029;
+      --line:#272D38; --line-soft:#212630;
+      --text:#E4E8EF; --muted:#98A1B2;
+      --accent:#7FA2F7; --accent-soft:#18233D;
+      --ok:#4BB280; --ok-soft:#12291F;
+      --partial:#D69A43; --partial-soft:#2A2115;
+      --todo:#8A93A3; --todo-soft:#1E232C;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0F1217; --surface:#161A21; --sunk:#1B2029;
+    --line:#272D38; --line-soft:#212630;
+    --text:#E4E8EF; --muted:#98A1B2;
+    --accent:#7FA2F7; --accent-soft:#18233D;
+    --ok:#4BB280; --ok-soft:#12291F;
+    --partial:#D69A43; --partial-soft:#2A2115;
+    --todo:#8A93A3; --todo-soft:#1E232C;
+  }
+
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;}
+  .wrap{max-width:1000px;margin:0 auto;padding-inline:20px;padding-block:0 96px;}
+
+  header.top{padding-block:56px 40px;border-bottom:1px solid var(--line);}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 14px;}
+  h1{font-family:var(--serif);font-weight:700;font-size:clamp(34px,6vw,52px);line-height:1.08;margin:0 0 16px;text-wrap:balance;letter-spacing:-.015em;}
+  .standfirst{font-size:18px;color:var(--muted);max-width:60ch;margin:0;}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:26px;}
+  .meta span{font-family:var(--mono);font-size:11px;padding:5px 10px;border:1px solid var(--line);border-radius:3px;color:var(--muted);background:var(--surface);}
+
+  nav.toc{margin-block:32px 8px;padding:18px 20px;background:var(--surface);border:1px solid var(--line);border-radius:6px;}
+  nav.toc p{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;}
+  nav.toc ol{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px 22px;counter-reset:t;}
+  nav.toc li{counter-increment:t;font-size:14px;}
+  nav.toc li::before{content:counter(t) ".";font-family:var(--mono);font-size:11px;color:var(--accent);margin-right:8px;}
+  nav.toc a{color:var(--text);text-decoration:none;border-bottom:1px solid transparent;}
+  nav.toc a:hover,nav.toc a:focus-visible{border-bottom-color:var(--accent);}
+
+  section{padding-block:44px 8px;border-top:1px solid var(--line-soft);}
+  section:first-of-type{border-top:0;}
+  h2{font-family:var(--serif);font-weight:600;font-size:clamp(23px,3.4vw,30px);line-height:1.2;margin:0 0 6px;letter-spacing:-.01em;text-wrap:balance;}
+  h2 .num{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--accent);display:block;margin-bottom:8px;letter-spacing:.1em;}
+  h3{font-family:var(--sans);font-weight:600;font-size:16px;margin:30px 0 8px;}
+  p,li{max-width:68ch;}
+  p{margin:0 0 15px;}
+  a{color:var(--accent);}
+  strong{font-weight:600;}
+  code{font-family:var(--mono);font-size:.88em;background:var(--sunk);padding:2px 5px;border-radius:3px;}
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.65;background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:16px 18px;overflow-x:auto;margin:0 0 18px;}
+  pre code{background:none;padding:0;font-size:inherit;}
+
+  .thesis{background:var(--accent-soft);border:1px solid var(--accent);border-radius:6px;padding:22px 24px;margin:0 0 8px;}
+  .thesis p{margin:0;font-size:17px;max-width:62ch;}
+  .thesis p+p{margin-top:12px;font-size:15px;color:var(--muted);}
+
+  figure{margin:26px 0 8px;}
+  .figbox{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:20px 16px;overflow-x:auto;}
+  svg.dia{display:block;width:100%;max-width:100%;height:auto;min-width:560px;color:var(--text);}
+  figcaption{font-size:13px;color:var(--muted);margin-top:11px;max-width:68ch;}
+
+  .tablewrap{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:6px;background:var(--surface);}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;}
+  th{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--sunk);}
+  tr:last-child td{border-bottom:0;}
+  td.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13px;}
+
+  .chip{display:inline-block;font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:99px;white-space:nowrap;font-weight:500;}
+  .chip.ok{background:var(--ok-soft);color:var(--ok);}
+  .chip.partial{background:var(--partial-soft);color:var(--partial);}
+  .chip.todo{background:var(--todo-soft);color:var(--todo);}
+
+  .callout{border-left:3px solid var(--accent);padding:2px 0 2px 18px;margin:20px 0;}
+  .callout p{margin:0;}
+  .callout p+p{margin-top:10px;}
+
+  .rec{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:18px 20px;margin:18px 0;}
+  .rec h4{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 10px;font-weight:500;}
+  .rec p{margin:0 0 10px;font-size:15px;}
+  .rec p:last-child{margin-bottom:0;}
+
+  footer{margin-top:56px;padding-top:26px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);}
+  @media (max-width:560px){ .figbox{padding:14px 10px;} }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">System design · Ninja agent harness</p>
+  <h1>Ninja Harness Anatomy</h1>
+  <p class="standfirst">What actually runs when you type a message — which model is in charge at each step, what memory it has, where that memory physically lives, and what stops it going wrong.</p>
+  <div class="meta">
+    <span>~1,400 lines</span><span>8 of 15 layers built</span><span>SQLite + FTS5</span><span>Anthropic API</span><span>No framework</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#idea">The one idea</a></li>
+    <li><a href="#turn">A turn, end to end</a></li>
+    <li><a href="#memory">Memory: four kinds, three stores</a></li>
+    <li><a href="#gate">The retrieval gate</a></li>
+    <li><a href="#orchestration">Orchestration</a></li>
+    <li><a href="#control">The control plane</a></li>
+    <li><a href="#llmops">LLMOps: the outer loop</a></li>
+    <li><a href="#growth">Self-improvement</a></li>
+    <li><a href="#waku">Against waku-agent</a></li>
+    <li><a href="#langgraph">The LangGraph question</a></li>
+    <li><a href="#evidence">Evidence from the parked branch</a></li>
+  </ol>
+</nav>
+
+<section id="idea">
+  <h2><span class="num">01</span>The one idea</h2>
+  <div class="thesis">
+    <p><strong>The model remembers nothing. Working memory is rebuilt from storage on every single turn, then thrown away.</strong></p>
+    <p>Everything else — three memory stores, a retrieval gate, a router, consolidation — exists to answer one question well: given this message, what should be in the context window <em>this time</em>?</p>
+  </div>
+  <p>An LLM call is stateless. It sees a system prompt and a message list, and nothing else. “The agent remembers I'm a QA engineer” is never true of the model. It is true of the assembly step that put that fact into the prompt before the call.</p>
+</section>
+
+<section id="turn">
+  <h2><span class="num">02</span>A turn, end to end</h2>
+  <p>You type <code>what am I building?</code> into the REPL or the cockpit. Eight stages run. Two of them are model calls.</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dia" viewBox="0 0 860 690" role="img" aria-label="Eight-stage pipeline for one turn: gateway, route, load persona, gate, assemble, loop, persist, reply. Route and loop are model calls.">
+        <defs>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif">
+          <!-- stages -->
+          <g stroke="currentColor" stroke-width="1" fill="var(--surface)" opacity="1">
+            <rect x="40" y="24"  width="470" height="52" rx="4"/>
+            <rect x="40" y="100" width="470" height="52" rx="4"/>
+            <rect x="40" y="176" width="470" height="52" rx="4"/>
+            <rect x="40" y="252" width="470" height="52" rx="4"/>
+            <rect x="40" y="328" width="470" height="52" rx="4"/>
+            <rect x="40" y="404" width="470" height="92" rx="4"/>
+            <rect x="40" y="520" width="470" height="52" rx="4"/>
+            <rect x="40" y="596" width="470" height="52" rx="4"/>
+          </g>
+          <g font-size="13" font-weight="600" fill="currentColor">
+            <text x="60" y="46">1 · Gateway</text>
+            <text x="60" y="122">2 · Route</text>
+            <text x="60" y="198">3 · Load persona</text>
+            <text x="60" y="274">4 · Gate</text>
+            <text x="60" y="350">5 · Assemble working memory</text>
+            <text x="60" y="426">6 · Loop</text>
+            <text x="60" y="542">7 · Persist</text>
+            <text x="60" y="618">8 · Reply</text>
+          </g>
+          <g font-size="11.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">
+            <text x="60" y="64">cli.py · server.py — opens a Trace</text>
+            <text x="60" y="140">router.py — which conversation? sticky</text>
+            <text x="60" y="216">personas.py — PERSONA.md: prompt, tools, model</text>
+            <text x="60" y="292">semantic.py — worth retrieving for? skip is recorded</text>
+            <text x="60" y="368">agent.py — instructions + facts + recent turns</text>
+            <text x="60" y="444">agent.py — model ⇄ tool, until no more tools</text>
+            <text x="60" y="464">MAX_STEPS = 6 hard stop</text>
+            <text x="60" y="558">episodic.py → chat_log · trace.py → traces</text>
+            <text x="60" y="636">terminal or browser</text>
+          </g>
+          <!-- connectors -->
+          <g stroke="currentColor" stroke-width="1.4" marker-end="url(#ar)" fill="none">
+            <line x1="275" y1="76"  x2="275" y2="96"/>
+            <line x1="275" y1="152" x2="275" y2="172"/>
+            <line x1="275" y1="228" x2="275" y2="248"/>
+            <line x1="275" y1="304" x2="275" y2="324"/>
+            <line x1="275" y1="380" x2="275" y2="400"/>
+            <line x1="275" y1="496" x2="275" y2="516"/>
+            <line x1="275" y1="572" x2="275" y2="592"/>
+          </g>
+          <!-- model call markers -->
+          <g stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#arA)">
+            <line x1="510" y1="126" x2="600" y2="126"/>
+            <line x1="510" y1="450" x2="600" y2="450"/>
+          </g>
+          <g stroke="var(--accent)" stroke-width="1" fill="var(--accent-soft)">
+            <rect x="604" y="102" width="216" height="48" rx="4"/>
+            <rect x="604" y="426" width="216" height="48" rx="4"/>
+          </g>
+          <g font-size="11.5" fill="var(--accent)" font-family="IBM Plex Mono, monospace">
+            <text x="618" y="122">MODEL CALL 1</text>
+            <text x="618" y="140">haiku-4-5 · classifier</text>
+            <text x="618" y="446">MODEL CALL 2…N</text>
+            <text x="618" y="464">persona.model · the agent</text>
+          </g>
+          <!-- tool loop -->
+          <g stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)" stroke-dasharray="4 3">
+            <path d="M470 470 C 545 470, 545 414, 480 414"/>
+          </g>
+          <text x="492" y="494" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">tool call</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Two model calls minimum per turn: one to route, one to answer. Each tool round trip adds another. The dashed arc is the tool loop, capped at six steps.</figcaption>
+  </figure>
+
+  <h3>Who is in charge, and when</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Step</th><th>Actor</th><th>Model</th><th>Why that one</th></tr></thead>
+    <tbody>
+      <tr><td>2 · Route</td><td>Router</td><td><code>claude-haiku-4-5</code></td><td>One short classification. Cheap and fast beats smart.</td></tr>
+      <tr><td>6 · Loop</td><td>The persona</td><td><code>persona.model</code></td><td>The persona owns its model. A coach can be cheap; a researcher expensive.</td></tr>
+      <tr><td>— Consolidate</td><td>Summarizer <span class="chip todo">L10</span></td><td>cheap</td><td>Batch work. Cost matters more than quality.</td></tr>
+      <tr><td>— Judge</td><td>Eval <span class="chip todo">L11</span></td><td>strong</td><td>Judging output needs more capability than producing it.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="memory">
+  <h2><span class="num">03</span>Memory: four kinds, three stores</h2>
+  <p>The names come from cognitive science and are worth keeping straight, because each has a different lifetime and a different failure mode.</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dia" viewBox="0 0 860 430" role="img" aria-label="Working memory assembled from procedural, semantic and episodic stores; procedural lives in files, semantic and episodic in one SQLite database.">
+        <defs>
+          <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif">
+          <rect x="40" y="24" width="780" height="80" rx="5" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.2"/>
+          <text x="60" y="52" font-size="14" font-weight="600" fill="var(--accent)">WORKING MEMORY — the context window</text>
+          <text x="60" y="74" font-size="12" fill="var(--muted)" font-family="IBM Plex Mono, monospace">assembled fresh each turn · discarded at turn end · never stored</text>
+          <text x="60" y="92" font-size="12" fill="var(--muted)" font-family="IBM Plex Mono, monospace">this is RAM, not disk</text>
+
+          <g stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar2)">
+            <line x1="170" y1="212" x2="170" y2="110"/>
+            <line x1="430" y1="212" x2="430" y2="110"/>
+            <line x1="690" y1="212" x2="690" y2="110"/>
+          </g>
+          <g font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace" text-anchor="middle">
+            <text x="170" y="170">always</text>
+            <text x="430" y="170">only if the</text>
+            <text x="430" y="186">gate says yes</text>
+            <text x="690" y="170">last N turns</text>
+          </g>
+
+          <g stroke="currentColor" stroke-width="1" fill="var(--surface)">
+            <rect x="48"  y="216" width="244" height="104" rx="5"/>
+            <rect x="308" y="216" width="244" height="104" rx="5"/>
+            <rect x="568" y="216" width="244" height="104" rx="5"/>
+          </g>
+          <g font-size="13" font-weight="600" fill="currentColor">
+            <text x="66" y="242">PROCEDURAL</text>
+            <text x="326" y="242">SEMANTIC</text>
+            <text x="586" y="242">EPISODIC</text>
+          </g>
+          <g font-size="12" fill="var(--muted)">
+            <text x="66" y="262">how to act</text>
+            <text x="326" y="262">what is durably true</text>
+            <text x="586" y="262">what was said, in order</text>
+          </g>
+          <g font-size="11.5" fill="currentColor" font-family="IBM Plex Mono, monospace">
+            <text x="66" y="288">personas/*/PERSONA.md</text>
+            <text x="66" y="306">+ SKILL.md (L14)</text>
+            <text x="326" y="288">facts — FTS5 virtual</text>
+            <text x="326" y="306">keyword top-k = 3</text>
+            <text x="586" y="288">chat_log</text>
+            <text x="586" y="306">ordered by id</text>
+          </g>
+
+          <g stroke="currentColor" stroke-width="1" stroke-dasharray="3 3" fill="none">
+            <rect x="48" y="344" width="244" height="46" rx="4"/>
+            <rect x="308" y="344" width="504" height="46" rx="4"/>
+          </g>
+          <g font-size="11.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace" text-anchor="middle">
+            <text x="170" y="372">flat files on disk</text>
+            <text x="560" y="372">.ninja/state.db — one SQLite file</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Three durable stores feed one ephemeral assembly. Procedural memory is files you can read and edit; semantic and episodic share a single SQLite database so a turn's writes are one transaction.</figcaption>
+  </figure>
+
+  <h3>Semantic memory uses keyword search, not embeddings</h3>
+  <p>The <code>facts</code> table is an FTS5 virtual table — the index <em>is</em> the storage, so there are no triggers to keep in sync. Porter stemming means “deployment” matches “deploy”.</p>
+  <pre><code>CREATE VIRTUAL TABLE facts USING fts5(
+    content,
+    source UNINDEXED, trace_id UNINDEXED, created_at UNINDEXED,
+    tokenize = 'porter unicode61'
+);</code></pre>
+  <p>This is deliberate, it matches the reference architecture, and there is measured evidence for it — see <a href="#evidence">§11</a>.</p>
+</section>
+
+<section id="gate">
+  <h2><span class="num">04</span>The retrieval gate</h2>
+  <p>Most turns need no facts at all. Retrieving anyway costs tokens <em>and</em> pushes irrelevant context at the model, which makes answers worse, not merely slower.</p>
+  <pre><code>if count() == 0:  return False, "nothing remembered yet", []
+hits = search(text)
+if not hits:      return False, "no fact matched", []
+return True, f"{len(hits)} fact(s) matched", hits</code></pre>
+  <div class="callout">
+    <p><strong>The search runs before the decision.</strong> With a local index that costs microseconds, so what the gate protects is <em>context</em>, not latency. Backed by a vector API the order would have to flip.</p>
+    <p><strong>A skip is a recorded event, not an absence.</strong> An absence is invisible; a decision can be audited. Same instinct as recording an explicit persona override rather than silently skipping the router.</p>
+  </div>
+</section>
+
+<section id="orchestration">
+  <h2><span class="num">05</span>Orchestration</h2>
+  <h3>A persona is not a prompt</h3>
+  <p>It bundles four things: instructions, a <strong>tool allowlist</strong>, a model, and a <code>description</code> the router reads. That bundle is the unit of specialisation — “psychologist”, “health coach”, “researcher” are each one <code>PERSONA.md</code>.</p>
+  <pre><code>---
+name: assistant
+description: The default. Use for anything about this project…   # ← the router reads THIS
+tools: [list_files, read_file, remember]                          # ← the allowlist
+model: claude-haiku-4-5
+---
+You are a helpful assistant with read access to this project's files.</code></pre>
+  <p>The <code>description</code> is a tool description in disguise: it says <em>when to use this persona</em>, not what it is, because that is the decision the router makes.</p>
+
+  <h3>Threads — one chat, several conversations underneath</h3>
+  <p>Each persona keeps its own transcript. Interrupting a coaching session to make a note and coming back works because the coach's thread was never touched.</p>
+  <p><strong>The router is sticky by construction.</strong> Most turns continue what you were already doing, and a follow-up like “why would you pick that?” contains nothing naming coaching. A router without stickiness misfiles constantly; one with it only has to notice genuine changes of subject. It never fails a turn — on an API error, a truncated reply, or an unrecognised name it stays put and records why.</p>
+
+  <h3>Delegation <span class="chip todo">layer 8b</span></h3>
+  <p><code>delegate</code> becomes a <em>tool</em>, so a sub-agent is just another loop started from inside a loop. Two guardrails are already specified: a depth cap, and the <strong>subset rule</strong> — a child's allowlist must be a subset of its parent's. A child may never hold more privilege than its caller.</p>
+</section>
+
+<section id="control">
+  <h2><span class="num">06</span>The control plane</h2>
+  <p>Every row below is live in the cockpit's guardrail panel, read from the running code rather than a copy of it.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Guardrail</th><th>Value</th><th>Stops</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>Step cap</td><td class="num">MAX_STEPS = 6</td><td>One loop spinning forever</td><td><span class="chip ok">live</span></td></tr>
+      <tr><td>Path boundary</td><td class="num">project root</td><td>Tools reading outside the project</td><td><span class="chip ok">live</span></td></tr>
+      <tr><td>Hidden paths</td><td class="num">refuse leading “.”</td><td>Reading <code>.env</code> into the transcript</td><td><span class="chip ok">live</span></td></tr>
+      <tr><td>Retrieval gate</td><td class="num">top-3, stopword-filtered</td><td>Context tokens on turns needing no facts</td><td><span class="chip ok">live</span></td></tr>
+      <tr><td>Tool allowlist</td><td class="num">persona.tools</td><td>The coach calling <code>list_files</code></td><td><span class="chip ok">live</span></td></tr>
+      <tr><td>Depth cap</td><td class="num">MAX_DEPTH</td><td>A → B → C → A delegation chains</td><td><span class="chip todo">L8b</span></td></tr>
+      <tr><td>Subset rule</td><td class="num">child ⊆ parent</td><td>A child holding more privilege than its caller</td><td><span class="chip todo">L8b</span></td></tr>
+      <tr><td>Guarded set</td><td class="num">allowlist over roots</td><td>The system editing its own enforcement</td><td><span class="chip todo">L13</span></td></tr>
+    </tbody>
+  </table></div>
+  <h3>The allowlist is enforced once, at the gate</h3>
+  <pre><code>if isinstance(allowed, str) or name not in allowed:
+    raise ValueError(f"{name} is not in this persona's allowlist")</code></pre>
+  <p>Filtering the schemas the model <em>sees</em> is advisory — a model that saw a tool name earlier in the conversation can still emit it. So the check sits at dispatch, before any branch touches its arguments. The <code>isinstance</code> guard catches an allowlist flattened into one string, which would otherwise grant every tool whose name appears anywhere inside it.</p>
+</section>
+
+<section id="llmops">
+  <h2><span class="num">07</span>LLMOps: the outer loop</h2>
+  <p>The inner loop answers your message. The outer loop <strong>improves the system that answers it</strong>. This is the half that makes it engineering rather than prompting — and it is the half that does not exist yet.</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dia" viewBox="0 0 860 400" role="img" aria-label="Outer loop: reply feeds trace, which feeds eval, observe and diagnose; a gate either releases an improved config back into the agent run, or sends failures back for re-running.">
+        <defs>
+          <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif">
+          <g stroke="currentColor" stroke-width="1" fill="var(--surface)">
+            <rect x="34" y="150" width="120" height="56" rx="4"/>
+          </g>
+          <g stroke="var(--ok)" stroke-width="1.2" fill="var(--ok-soft)">
+            <rect x="196" y="150" width="130" height="56" rx="4"/>
+          </g>
+          <g stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" fill="var(--sunk)">
+            <rect x="368" y="34"  width="150" height="56" rx="4"/>
+            <rect x="368" y="150" width="150" height="56" rx="4"/>
+            <rect x="368" y="266" width="150" height="56" rx="4"/>
+            <rect x="614" y="150" width="150" height="56" rx="4"/>
+          </g>
+          <polygon points="566,178 590,160 614,178 590,196" fill="var(--sunk)" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/>
+
+          <g font-size="12.5" font-weight="600" fill="currentColor">
+            <text x="52" y="176">Reply</text>
+            <text x="214" y="176">Trace</text>
+            <text x="386" y="58">Eval</text>
+            <text x="386" y="174">Observe</text>
+            <text x="386" y="290">Diagnose</text>
+            <text x="632" y="174">Release</text>
+          </g>
+          <g font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">
+            <text x="214" y="194">1 per run · L3</text>
+            <text x="386" y="76">LLM-as-judge → score</text>
+            <text x="386" y="192">tokens, latency, errors</text>
+            <text x="386" y="308">where did it break?</text>
+            <text x="632" y="192">prompt ver · model · top-k</text>
+            <text x="556" y="212">gate</text>
+          </g>
+
+          <g stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar3)">
+            <line x1="154" y1="178" x2="192" y2="178"/>
+            <path d="M326 170 C 348 170, 348 62, 364 62"/>
+            <line x1="326" y1="178" x2="364" y2="178"/>
+            <path d="M326 186 C 348 186, 348 294, 364 294"/>
+            <path d="M518 62 C 545 62, 545 168, 564 176"/>
+          </g>
+          <g stroke="var(--ok)" stroke-width="1.6" fill="none" marker-end="url(#ar3)" color="var(--ok)">
+            <line x1="614" y1="178" x2="610" y2="178"/>
+          </g>
+          <path d="M590 196 C 590 250, 590 300, 500 340 L 120 340 C 60 340, 34 300, 34 212" stroke="currentColor" stroke-width="1.2" fill="none" stroke-dasharray="5 4" marker-end="url(#ar3)"/>
+          <text x="300" y="334" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace">eval failed → fix, re-run, re-trace</text>
+          <path d="M689 206 C 689 264, 620 268, 560 268 L 120 268 C 70 268, 46 240, 42 214" stroke="var(--ok)" stroke-width="1.4" fill="none" marker-end="url(#ar3)" color="var(--ok)"/>
+          <text x="300" y="262" font-size="11" fill="var(--ok)" font-family="IBM Plex Mono, monospace">passed → improved system prompt + config</text>
+          <text x="612" y="140" font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">solid = built · dashed = layer 11</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Only the trace exists today. Eval, observe, diagnose and the release gate are layer 11 — the single largest gap between this system and its reference architecture.</figcaption>
+  </figure>
+
+  <h3>Trace — built <span class="chip ok">layer 3</span></h3>
+  <p>One row per turn. A turn is everything between your message and the reply, however many model and tool calls that took.</p>
+  <pre><code>CREATE TABLE traces (
+    id, started_at, duration_ms, user_input, reply,
+    model_calls, input_tokens, output_tokens, cost_usd,
+    events TEXT NOT NULL   -- JSON array, in the order they happened
+);</code></pre>
+  <p><code>events</code> holds every decision — <code>route</code>, <code>gate</code>, <code>model</code>, <code>tool</code> — and that array is what makes a turn reconstructable afterwards. <strong>Cost is computed locally</strong> from a pricing table rather than reported by the API, so an unknown model shows as zero <em>and is flagged unpriced</em>, instead of silently claiming it was free.</p>
+</section>
+
+<section id="growth">
+  <h2><span class="num">08</span>Self-improvement</h2>
+  <p>The agent proposes a new skill, tool or agent; you approve; it designs; you approve the PR. The architecture splits that into two stages, and <strong>the split is the safety property</strong>.</p>
+
+  <figure>
+    <div class="figbox">
+      <svg class="dia" viewBox="0 0 860 210" role="img" aria-label="Self-improvement pipeline: proposal, human approval, design, build inside the guarded set, pull request, second human approval, merge.">
+        <defs>
+          <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <g font-family="IBM Plex Sans, sans-serif">
+          <g stroke="currentColor" stroke-width="1" fill="var(--surface)">
+            <rect x="24"  y="60" width="116" height="52" rx="4"/>
+            <rect x="316" y="60" width="116" height="52" rx="4"/>
+            <rect x="462" y="60" width="116" height="52" rx="4"/>
+            <rect x="754" y="60" width="82"  height="52" rx="4"/>
+          </g>
+          <g stroke="var(--accent)" stroke-width="1.4" fill="var(--accent-soft)">
+            <rect x="170" y="60" width="116" height="52" rx="4"/>
+            <rect x="608" y="60" width="116" height="52" rx="4"/>
+          </g>
+          <g font-size="12.5" font-weight="600" fill="currentColor">
+            <text x="42" y="84">Proposal</text>
+            <text x="334" y="84">Design</text>
+            <text x="480" y="84">Build</text>
+            <text x="772" y="92">Merge</text>
+          </g>
+          <g font-size="12.5" font-weight="600" fill="var(--accent)">
+            <text x="188" y="84">YOU approve</text>
+            <text x="626" y="84">YOU approve</text>
+          </g>
+          <g font-size="10.5" fill="var(--muted)" font-family="IBM Plex Mono, monospace">
+            <text x="42" y="102">no write tools</text>
+            <text x="188" y="102">gate 1</text>
+            <text x="480" y="102">guarded set</text>
+            <text x="626" y="102">gate 2 · the PR</text>
+          </g>
+          <g stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar4)">
+            <line x1="140" y1="86" x2="166" y2="86"/>
+            <line x1="286" y1="86" x2="312" y2="86"/>
+            <line x1="432" y1="86" x2="458" y2="86"/>
+            <line x1="578" y1="86" x2="604" y2="86"/>
+            <line x1="724" y1="86" x2="750" y2="86"/>
+          </g>
+          <rect x="452" y="44" width="136" height="84" rx="6" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3"/>
+          <text x="430" y="158" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace" text-anchor="middle">may add at extension points ·</text>
+          <text x="430" y="174" font-size="11" fill="var(--muted)" font-family="IBM Plex Mono, monospace" text-anchor="middle">may not edit the boundary that enforces this</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>Two human gates, and the build step confined to an allowlist of extension points. The thing proposing a change is never the thing approving it.</figcaption>
+  </figure>
+
+  <p><strong>Stage 1 <span class="chip todo">layer 9</span></strong> — the architect persona can write a proposal <em>and nothing else</em>. It holds no write tools. Its output is a structured document, not a change.</p>
+  <p><strong>Stage 2 <span class="chip todo">layers 13–15</span></strong> — the guarded set is an allowlist over roots: everything under these paths is guarded, <em>except</em> these specific extension points. The system may add a new tool where an extension point allows it; it may not edit the code enforcing the boundary.</p>
+  <p>None of this is built. It is fully specified in <code>ARCHITECTURE.md</code> § Self-extension, which is the most carefully reasoned part of the design and worth reading in full.</p>
+</section>
+
+<section id="waku">
+  <h2><span class="num">09</span>Against waku-agent</h2>
+  <p>Parity is good. Every gap is in the outer loop.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Component</th><th>waku</th><th>ninja</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>Gateway</td><td>Telegram / WhatsApp / Slack</td><td>CLI + FastAPI cockpit</td><td><span class="chip partial">different surface</span></td></tr>
+      <tr><td>Working memory</td><td>assembled per run</td><td>assembled per run</td><td><span class="chip ok">match</span></td></tr>
+      <tr><td>Loop + tools</td><td><code>max_iterations = 10</code></td><td><code>MAX_STEPS = 6</code></td><td><span class="chip ok">same design</span></td></tr>
+      <tr><td><strong>Retrieval gate</strong></td><td><strong>small-model call; writes the query; fails open</strong></td><td>keyword match; skips on no hit</td><td><span class="chip partial">differs</span></td></tr>
+      <tr><td>Procedural</td><td><code>SKILL.md</code> per skill</td><td><code>PERSONA.md</code> per persona</td><td><span class="chip partial">no SKILL.md yet</span></td></tr>
+      <tr><td><strong>Semantic</strong></td><td><strong>FTS5 by default; pluggable</strong> (pgvector, mem0, langmem, zep)</td><td><strong>FTS5, one backend</strong></td><td><span class="chip partial">default matches</span></td></tr>
+      <tr><td>Episodic</td><td>dated events + history</td><td><code>chat_log</code></td><td><span class="chip ok">match</span></td></tr>
+      <tr><td>Storage</td><td><code>state.db</code> SQLite + FTS5</td><td><code>.ninja/state.db</code> SQLite + FTS5</td><td><span class="chip ok">match</span></td></tr>
+      <tr><td>Consolidation</td><td>after N chats → distil</td><td>—</td><td><span class="chip todo">layer 10</span></td></tr>
+      <tr><td>Sub-agents</td><td><code>delegate_task</code></td><td>—</td><td><span class="chip todo">layer 8b</span></td></tr>
+      <tr><td>Tools</td><td>~17 modules</td><td>3</td><td><span class="chip todo">far smaller</span></td></tr>
+      <tr><td>Size</td><td>~28,600 lines</td><td>~1,400</td><td><span class="chip partial">~20×</span></td></tr>
+      <tr><td>Cron</td><td>scheduled runs</td><td>—</td><td><span class="chip todo">unplanned</span></td></tr>
+      <tr><td>Trace</td><td>1 per run</td><td>1 per run</td><td><span class="chip ok">match</span></td></tr>
+      <tr><td>Eval / judge</td><td>LLM-as-judge → scores</td><td>—</td><td><span class="chip todo">layer 11</span></td></tr>
+      <tr><td>Diagnose → gate → release</td><td>full loop</td><td>—</td><td><span class="chip todo">layer 11</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout">
+    <p><strong>The semantic row matches on the default, not on the whole design.</strong> Waku's default is FTS5 keyword search with no embedding, and so is this system's. But waku calls that “a boring default and a documented upgrade” — pgvector and three memory services plug in behind the same interface. The parked vector branch was the upgrade path, built before the base was finished.</p>
+    <p><strong>The gate differs, and it matters more.</strong> Waku's gate is a small-model call that decides whether to retrieve <em>and writes the search query</em>; it fails open, retrieving anyway if the gate errors. This system's gate is a free keyword match that skips when nothing hits. Waku pays one small call per turn to get better queries.</p>
+    <p>The inner loop here is close to complete. The outer loop does not exist. That is where the next work belongs, and it maps exactly onto layers 10 and 11.</p>
+  </div>
+</section>
+
+<section id="langgraph">
+  <h2><span class="num">10</span>The LangGraph question</h2>
+  <p>Layer 12 is already “LangGraph port”, for a reason: <strong>build it by hand once, then port it.</strong> You cannot judge what a framework does for you until you have done it yourself.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Hand-rolled today</th><th>Framework equivalent</th><th>You gain</th><th>You lose</th></tr></thead>
+    <tbody>
+      <tr><td><code>run_turn()</code> while-loop</td><td><code>StateGraph</code> + conditional edges</td><td>Retries, branching, resumability</td><td>A 40-line loop you can read in one sitting</td></tr>
+      <tr><td><code>MAX_STEPS = 6</code></td><td>recursion limit</td><td>Same thing, declared</td><td>Nothing</td></tr>
+      <tr><td><code>messages</code> list</td><td><code>MessagesState</code> + checkpointer</td><td>Persistence, time-travel debugging</td><td>Direct control of the window</td></tr>
+      <tr><td><code>router.route()</code></td><td>a routing node</td><td>Graph-native, visualisable</td><td>Nothing</td></tr>
+      <tr><td><code>episodic.py</code></td><td><code>SqliteSaver</code></td><td>Free thread persistence</td><td>Your own schema</td></tr>
+      <tr><td><code>semantic.py</code> + FTS5</td><td>a retriever</td><td>Swappable backends</td><td>The gate, unless you rebuild it</td></tr>
+      <tr><td><code>trace.py</code></td><td><strong>LangSmith</strong></td><td>Real UI, diffing, datasets</td><td>Local-only, zero-dependency traces</td></tr>
+      <tr><td>layer 11 evals</td><td>LangSmith evaluators</td><td>LLM-as-judge out of the box</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <div class="rec">
+    <h4>Recommendation</h4>
+    <p><strong>Adopt LangSmith early. Adopt LangGraph late.</strong></p>
+    <p><strong>LangSmith</strong> replaces something you have <em>not</em> built — eval, judge, diagnose, release gate — and it is additive. You can point it at the current code without restructuring anything.</p>
+    <p><strong>LangGraph</strong> replaces something you <em>have</em> built and understand. Porting now costs you the thing you are here to learn. Port at layer 12 as planned, once the hand-rolled version is feature-complete — then the diff <em>is</em> the lesson.</p>
+    <p><strong>LangChain</strong> the base library: piecemeal or not at all. Its abstractions are the ones most likely to hide the mechanics you want to see.</p>
+  </div>
+</section>
+
+<section id="evidence">
+  <h2><span class="num">11</span>Evidence from the parked branch</h2>
+  <p>A branch replacing FTS5 with local embeddings was built to five of six tasks, then parked. What it measured is worth keeping, because it explains <em>why</em> the keyword design is defensible rather than merely simpler.</p>
+  <p><strong>Embeddings rank well.</strong> Top-1 correct 5/5 with a bi-encoder and 6/6 with a cross-encoder reranker — including cases FTS5 provably cannot reach, like “tell me about my testing background” matching a QA fact that shares no words with it.</p>
+  <p><strong>Embeddings cannot gate.</strong> No cosine floor separates relevant from irrelevant queries, at any model size:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Model</th><th>dim</th><th>lowest relevant</th><th>highest irrelevant</th><th>separation</th></tr></thead>
+    <tbody>
+      <tr><td><code>bge-small-en-v1.5</code></td><td class="num">384</td><td class="num">0.512</td><td class="num">0.651</td><td class="num">−0.139</td></tr>
+      <tr><td><code>bge-base-en-v1.5</code></td><td class="num">768</td><td class="num">0.464</td><td class="num">0.543</td><td class="num">−0.079</td></tr>
+      <tr><td><code>gte-base</code></td><td class="num">768</td><td class="num">0.749</td><td class="num">0.776</td><td class="num">−0.027</td></tr>
+      <tr><td><code>mxbai-embed-large-v1</code></td><td class="num">1024</td><td class="num">0.412</td><td class="num">0.519</td><td class="num">−0.108</td></tr>
+    </tbody>
+  </table></div>
+  <p>Never positive. Margin and z-score separate <em>worse</em>. Cross-encoders rank better and gate no better.</p>
+  <div class="callout">
+    <p><strong>Ranking is cheap and solvable; judging relevance is not a similarity problem.</strong> Which is a good argument for cheap keyword retrieval plus an LLM judgement — and that is what waku's gate does: a small model decides whether to retrieve, keyword search does the retrieving.</p>
+  </div>
+  <p><strong>A second finding, independent of backend.</strong> A fact-to-fact dedup threshold at 0.85 silently destroys distinct facts: <em>“standup is at 9am”</em> and <em>“standup is at 10am”</em> score <strong>0.947</strong>. The only safe window measured was 0.947–0.981. If dedup is ever built, on any backend, it needs that calibration or it will quietly eat real data.</p>
+</section>
+
+<footer>
+  <p>Source of truth is the code: <code>ninja/agent.py</code> for the turn, <code>ninja/router.py</code> for routing, <code>ninja/semantic.py</code> and <code>ninja/episodic.py</code> for memory, <code>ninja/trace.py</code> for cost and events, <code>sql/schema.sql</code> for the shape of it all. Reasoning lives in <code>ARCHITECTURE.md</code>; this page is the map.</p>
+</footer>
+
+</div>

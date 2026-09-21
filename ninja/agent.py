@@ -7,6 +7,7 @@ hand the result back, and ask again — until it stops asking, or until the
 guardrail stops us.
 """
 
+import dataclasses
 import time
 
 import anthropic
@@ -14,7 +15,7 @@ from dotenv import load_dotenv
 
 from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, tools
 from ninja.personas import Persona
-from ninja.trace import Trace
+from ninja.trace import PRICING, Trace
 
 # Reads .env into the environment. .env is gitignored; the key never
 # touches the repo.
@@ -24,9 +25,84 @@ load_dotenv()
 # backstop for when it gets stuck asking for tools in a cycle.
 MAX_STEPS = 6
 
+# MAX_STEPS bounds one loop, not a tree of them: three levels of six steps is
+# up to 216 calls. These bound the tree. MAX_TURN_COST_USD is a guess — the
+# arithmetic says a busy delegating turn is about $0.11 — and wants replacing
+# with a measured number.
+MAX_DEPTH = 2
+MAX_DELEGATIONS_PER_TURN = 3
+MAX_TURN_COST_USD = 0.25
+
+# A child reads and reasons. Writes wait for the gate in layers 9 and 13-15, and
+# leaving them off also closes a cross-persona path: a hijacked orchestrator
+# cannot ask the coach to add_rule.
+WRITE_TOOLS = {"remember", "add_rule"}
+
 
 def ms_since(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _reduced(child: Persona, depth: int) -> Persona:
+    """What a persona may actually call when it runs at `depth`.
+
+    The frozen copy is what the child loop runs with, so the schema filter and
+    the allowlist in tools.run both enforce it — a child cannot call a tool it
+    was never given, even by name.
+    """
+    drop = WRITE_TOOLS | ({"delegate"} if depth >= MAX_DEPTH else set())
+    return dataclasses.replace(child, tools=tuple(t for t in child.tools if t not in drop))
+
+
+def _excess(child: Persona, depth: int, parent: Persona) -> list[str]:
+    """Tools the child could call that the parent could not. Empty means it fits."""
+    return sorted(set(_reduced(child, depth).tools) - set(parent.tools))
+
+
+def _refusal(child: Persona, depth: int, parent: Persona) -> str | None:
+    """Why `parent` may not delegate to `child` at `depth`, or None. The one
+    rule, so the list the model is offered and the refusal it would get agree."""
+    if child.name == parent.name:
+        return f"{parent.name} cannot delegate to itself."
+    # An unpriced model adds $0 to the trace, so the budget would never trip.
+    # A lone persona is the trace's business to flag; fan-out is where an
+    # unbounded spend becomes multiplicative, so this is where it fails closed.
+    for who in (parent, child):
+        if who.model not in PRICING:
+            return (
+                f"{who.name} runs on {who.model}, which has no price, so its spend "
+                "cannot be held to the turn budget. Price it in trace.PRICING first."
+            )
+    # Refuse rather than trim: quietly dropping a tool changes what the persona
+    # does without anyone having decided that.
+    extra = _excess(child, depth, parent)
+    if extra:
+        return (
+            f"{child.name} holds tools that {parent.name} does not: {', '.join(extra)}. "
+            "A delegate cannot have more privilege than the persona that asks."
+        )
+    return None
+
+
+def _instructions(persona: Persona, depth: int) -> str:
+    """The persona's instructions, its learned rules, and who it can hand work to."""
+    system = persona.instructions
+    learned = rules.rules_for(persona.name)
+    if learned:
+        system += (
+            "\n\nRules you have learned about how this person wants you to behave:\n" + learned
+        )
+    if "delegate" in persona.tools and depth < MAX_DEPTH:
+        # Only the ones the subset rule would accept: offering a target that is
+        # then refused teaches the model nothing but a wasted step.
+        targets = [
+            f"- {p.name}: {p.description}"
+            for p in personas.all()
+            if not _refusal(p, depth + 1, persona)
+        ]
+        if targets:
+            system += "\n\nYou can delegate a self-contained job to:\n" + "\n".join(targets)
+    return system
 
 
 def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
@@ -37,12 +113,7 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
     """
     retrieve, why, hits = semantic.gate(user_input)
     trace.gate(retrieve, why, len(hits))
-    system = persona.instructions
-    learned = rules.rules_for(persona.name)
-    if learned:
-        system += (
-            "\n\nRules you have learned about how this person wants you to behave:\n" + learned
-        )
+    system = _instructions(persona, 0)
     if not retrieve:
         return system
     return system + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
@@ -54,9 +125,17 @@ def run_turn(
     trace: Trace,
     persona: Persona,
     system: str | None = None,
+    depth: int = 0,
 ) -> str:
     """Loop until the model stops asking for tools. Returns its final text."""
+    def spawn(name: str, task: str) -> str:
+        return _delegate(client, trace, persona, depth, name, task)
+
     for _ in range(MAX_STEPS):
+        # Before the call, at every depth: the cost is a property of the turn,
+        # so a child that spends the budget ends its parent's next call too.
+        if trace.cost >= MAX_TURN_COST_USD:
+            return _stop(messages, f"turn budget of ${MAX_TURN_COST_USD:.2f} reached")
         started = time.perf_counter()
         response = client.messages.create(
             model=persona.model,
@@ -65,7 +144,7 @@ def run_turn(
             tools=persona.schemas(),
             messages=messages,
         )
-        trace.model(persona.model, response, ms_since(started), persona.name)
+        trace.model(persona.model, response, ms_since(started), persona.name, depth)
         # Append the blocks, not the text — the tool_use blocks have to go back
         # so the model can see its own request alongside our result.
         messages.append({"role": "assistant", "content": response.content})
@@ -82,7 +161,7 @@ def run_turn(
         for block in response.content:
             if block.type != "tool_use":
                 continue
-            print(f"  ↳ {block.name}({block.input})")
+            print(f"{'  ' * depth}  ↳ {block.name}({block.input})")
             started = time.perf_counter()
             # Only the ways a model-supplied name or argument can be wrong: a
             # refusal or a bad path (ValueError), a missing required argument
@@ -92,11 +171,13 @@ def run_turn(
             # tool — is ours, and catching it here would file it as an ordinary
             # tool error that looks exactly like a legitimate refusal.
             try:
-                output = tools.run(block.name, block.input, persona.tools, persona=persona.name)
+                output = tools.run(
+                    block.name, block.input, persona.tools, persona=persona.name, spawn=spawn
+                )
                 failed = False
             except (ValueError, KeyError, OSError) as exc:
                 output, failed = str(exc), True
-            trace.tool(block.name, block.input, not failed, output, ms_since(started))
+            trace.tool(block.name, block.input, not failed, output, ms_since(started), depth)
             results.append(
                 {
                     "type": "tool_result",
@@ -115,9 +196,56 @@ def run_turn(
     # leaving the last message a batch of tool results with no assistant turn
     # after it — so the next question is asked of a conversation that stops
     # mid-exchange, and working memory disagrees with what was saved.
-    stopped = f"[stopped: hit the {MAX_STEPS}-step guardrail]"
+    return _stop(messages, f"hit the {MAX_STEPS}-step guardrail")
+
+
+def _stop(messages: list, why: str) -> str:
+    stopped = f"[stopped: {why}]"
     messages.append({"role": "assistant", "content": stopped})
     return stopped
+
+
+def _delegate(client, trace: Trace, parent: Persona, depth: int, name: str, task: str) -> str:
+    """Run `name` on `task` as a child loop. Every refusal is a ValueError.
+
+    That is what tools.run's caller turns into a tool error the orchestrator can
+    read and recover from; anything else would fail the whole turn.
+    """
+    # Before anything counts: a child that started past the ceiling would only
+    # return its "[stopped" line, which the trace would record as a success.
+    if trace.cost >= MAX_TURN_COST_USD:
+        raise ValueError(f"the turn budget of ${MAX_TURN_COST_USD:.2f} is already spent.")
+    child_depth = depth + 1
+    if child_depth > MAX_DEPTH:
+        raise ValueError(f"delegation is limited to {MAX_DEPTH} levels deep.")
+    if trace.delegations >= MAX_DELEGATIONS_PER_TURN:
+        raise ValueError(f"at most {MAX_DELEGATIONS_PER_TURN} delegations per turn.")
+    # Unknown and path-like names are refused inside load(), before any read.
+    child = _reduced(personas.load(name), child_depth)
+    refusal = _refusal(child, child_depth, parent)
+    if refusal:
+        raise ValueError(refusal)
+    trace.delegations += 1
+    started = time.perf_counter()
+    ok = False
+    try:
+        # A fresh list holding only the brief. The parent's messages are being
+        # mutated by its own loop and none of it is the child's business. No
+        # retrieved facts either: the task is the whole interface.
+        reply = run_turn(
+            client,
+            [{"role": "user", "content": task}],
+            trace,
+            child,
+            _instructions(child, child_depth),
+            child_depth,
+        )
+        ok = True
+        return reply
+    finally:
+        # An API error in the child still propagates and fails the turn, as a
+        # parent's would; this only makes sure the attempt is on the record.
+        trace.delegate(name, child_depth, task, ok, ms_since(started))
 
 
 def switch(command: str, current: Persona) -> Persona:

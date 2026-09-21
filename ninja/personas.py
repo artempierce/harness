@@ -77,8 +77,13 @@ def _parse(text: str, source: Path) -> Persona:
     # a typo in a name would drop the capability and leave the persona looking
     # intact. From layer 9 the agent writes these files, and neither shape is
     # something it could notice went wrong.
-    if not isinstance(meta["tools"], list):
-        raise ValueError(f"{source}: tools must be a list, e.g. [read_file, remember]")
+    # (This module defines its own all(), so the builtin is not available here.)
+    if not isinstance(meta["tools"], list) or any(not isinstance(t, str) for t in meta["tools"]):
+        raise ValueError(f"{source}: tools must be a list of names, e.g. [read_file, remember]")
+    # `model: [a, b]` is not empty, so the check above passes it; it is then
+    # unhashable wherever the model id is looked up.
+    if not isinstance(meta["model"], str):
+        raise ValueError(f"{source}: model must be a single model id")
     known = {s["name"] for s in tools.SCHEMAS}
     unknown = [t for t in meta["tools"] if t not in known]
     if unknown:

@@ -96,6 +96,8 @@ Guardrails:
 | Guarded set (allowlist) | The system editing its own guardrails (see Self-extension) |
 | Allowlist subset rule | Delegating to a persona with more privilege than the caller |
 | Per-turn cost ceiling | A pipeline fan-out with no dollar bound |
+| `MAX_DELEGATIONS_PER_TURN` (3) | One turn spawning an unbounded number of children |
+| Read-only delegates; priced models only | Delegated runs cannot write in this version, and delegation is refused when either model has no price (its spend would read as free) |
 
 ### Tools
 

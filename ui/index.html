@@ -412,15 +412,22 @@ function step(e, i) {
     <span class="k">gate</span>
     <span class="d">${e.retrieve ? 'retrieve ' + e.hits : 'skip'} — ${esc(e.why)}</span>
     <span class="t">${e.ms}ms</span></div>`;
+  // Rows written before delegation have no depth, so it is read as 0.
+  const pad = (e.depth || 0) * 18;
+  const indent = pad ? ` style="margin-left:${pad}px"` : '';
+  if (e.type === 'delegate') return `<div class="step"${(e.depth || 1) > 1 ? ` style="margin-left:${(e.depth - 1) * 18}px"` : ''}><span class="k">${i+1}</span>
+    <span class="k">delegate</span>
+    <span class="d">\u2192 ${esc(e.persona)} (depth ${e.depth}) ${e.ok ? 'ok' : 'failed'} — ${esc(e.task)}</span>
+    <span class="t">${e.ms}ms</span></div>`;
   if (e.type === 'model') {
     // Older rows predate both fields, and a persona and model are only worth
     // the width once there is more than one of each.
     const ran = [e.persona, e.model].filter(Boolean).map(esc).join(' ');
-    return `<div class="step model"><span class="k">${i+1}</span><span class="k">model</span>
+    return `<div class="step model"${indent}><span class="k">${i+1}</span><span class="k">model</span>
       <span class="d">${ran ? ran + ' · ' : ''}${e.in} in / ${e.out} out → ${e.stop}${e.unpriced ? ' · unpriced' : ''}</span>
       <span class="t">${e.ms}ms</span></div>`;
   }
-  return `<div class="step ${e.ok ? 'tool' : 'tool err'}"><span class="k">${i+1}</span>
+  return `<div class="step ${e.ok ? 'tool' : 'tool err'}"${indent}><span class="k">${i+1}</span>
     <span class="k">${e.ok ? 'tool' : 'error'}</span>
     <span class="d">${esc(e.name)}(${esc(JSON.stringify(e.args))})</span>
     <span class="t">${e.ms}ms · ${e.bytes}b</span>

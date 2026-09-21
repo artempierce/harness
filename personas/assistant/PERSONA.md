@@ -3,7 +3,7 @@ name: assistant
 description: The default. Use for anything about this project, this codebase,
   or the user's own work — reading files, answering questions, remembering
   what stays true.
-tools: [list_files, read_file, remember, add_rule]
+tools: [list_files, read_file, remember, add_rule, delegate]
 model: claude-haiku-4-5
 ---
 

@@ -144,8 +144,8 @@ def switch(command: str, current: Persona) -> Persona:
 def main() -> None:
     client = anthropic.Anthropic()
     session = episodic.new_session()
-    messages = episodic.recall()
     persona = personas.load(personas.DEFAULT)
+    messages = episodic.recall(persona.name)
 
     print(f"ninja | {persona.name} | model={persona.model} | ctrl-d to quit")
     if messages:
@@ -170,8 +170,8 @@ def main() -> None:
                          build_system(user_input, trace, persona))
         trace_id = trace.finish(reply)
 
-        episodic.save(session, "user", user_input, trace_id)
-        episodic.save(session, "assistant", reply, trace_id)
+        episodic.save(session, "user", user_input, trace_id, persona.name)
+        episodic.save(session, "assistant", reply, trace_id, persona.name)
 
         print(f"\nagent> {reply}")
         print(

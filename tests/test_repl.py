@@ -35,7 +35,7 @@ def test_a_persona_command_never_becomes_a_user_turn(monkeypatch, capsys):
     # IndexError off the empty script rather than passing quietly.
     stub = StubClient([])
     monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
-    monkeypatch.setattr(agent.episodic, "recall", lambda: [])
+    monkeypatch.setattr(agent.episodic, "recall", lambda thread: [])
 
     lines = iter(["/persona interview-coach", ""])
 

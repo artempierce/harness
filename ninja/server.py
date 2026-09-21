@@ -21,7 +21,7 @@ app = FastAPI(title="ninja cockpit")
 
 # Seeded from episodic memory at import, so a restart picks the thread back up.
 session = episodic.new_session()
-messages: list = episodic.recall()
+messages: list = episodic.recall(personas.DEFAULT)
 # Which persona an unspecified request defaults to. A *name*, not a resolved
 # Persona: it is read once at the top of a request and immediately turned into
 # a frozen object, so a switch cannot reach a turn already in flight.
@@ -89,8 +89,8 @@ def chat(message: Message):
     if message.persona:
         active = persona.name
     trace_id = turn.finish(reply)
-    episodic.save(session, "user", message.text, trace_id)
-    episodic.save(session, "assistant", reply, trace_id)
+    episodic.save(session, "user", message.text, trace_id, persona.name)
+    episodic.save(session, "assistant", reply, trace_id, persona.name)
     return {
         "reply": reply,
         "trace_id": trace_id,

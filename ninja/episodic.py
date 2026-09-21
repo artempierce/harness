@@ -24,28 +24,33 @@ def new_session() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def save(session_id: str, role: str, content: str, trace_id: int | None = None) -> None:
+def save(
+    session_id: str, role: str, content: str, trace_id: int | None, thread: str
+) -> None:
     conn = connect()
     conn.execute(
-        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id)"
-        " VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO chat_log (session_id, role, content, created_at, trace_id, thread)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
         (
             session_id,
             role,
             content,
             datetime.now(UTC).isoformat(timespec="seconds"),
             trace_id,
+            thread,
         ),
     )
     conn.commit()
     conn.close()
 
 
-def recall(limit: int = RECALL) -> list[dict]:
-    """The most recent messages, oldest first, shaped for the messages array."""
+def recall(thread: str, limit: int = RECALL) -> list[dict]:
+    """One thread's most recent messages, oldest first, shaped for the array."""
     conn = connect()
     rows = conn.execute(
-        "SELECT role, content FROM chat_log ORDER BY id DESC LIMIT ?", (limit,)
+        "SELECT role, content FROM chat_log WHERE thread = ?"
+        " ORDER BY id DESC LIMIT ?",
+        (thread, limit),
     ).fetchall()
     conn.close()
     # An assistant message cannot lead the array, so drop it if the window
@@ -56,15 +61,30 @@ def recall(limit: int = RECALL) -> list[dict]:
     return messages
 
 
+def current_thread(default: str) -> str:
+    """The thread the last message went to.
+
+    Derived rather than stored. A remembered name has a write path that can get
+    out of step with the transcript it describes; the last row cannot, because
+    the thread and the messages are the same rows.
+    """
+    conn = connect()
+    row = conn.execute(
+        "SELECT thread FROM chat_log WHERE thread IS NOT NULL ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    conn.close()
+    return row[0] if row else default
+
+
 def history(limit: int = 50) -> list[dict]:
     conn = connect()
     rows = conn.execute(
-        "SELECT id, session_id, role, content, created_at, trace_id"
+        "SELECT id, session_id, role, content, created_at, trace_id, thread"
         " FROM chat_log ORDER BY id DESC LIMIT ?",
         (limit,),
     ).fetchall()
     conn.close()
-    keys = ("id", "session_id", "role", "content", "created_at", "trace_id")
+    keys = ("id", "session_id", "role", "content", "created_at", "trace_id", "thread")
     return [dict(zip(keys, row, strict=True)) for row in rows]
 
 

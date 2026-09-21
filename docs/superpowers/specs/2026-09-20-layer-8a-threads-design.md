@@ -59,8 +59,13 @@ having built it.
 One classifier call per turn, before the loop.
 
 ```python
-route(client, user_input, current, cast, trace) -> tuple[str, str]
+route(client, user_input, current, cast, trace) -> str
 ```
+
+It returns a thread name. The reason it chose one goes into the trace rather
+than back to the caller, because the only consumer of a reason is the person
+reading the trace afterwards, and returning it would give every call site the
+chance to drop it.
 
 It sends a small prompt — the persona names and `description` fields, the
 current thread, and the message — and gets back a name. `description` was

@@ -188,6 +188,11 @@ class Trace:
             {"type": "gate", "retrieve": retrieve, "why": why, "hits": hits, "ms": 0}
         )
 
+    def skills(self, names: list[str]) -> None:
+        # Recorded only when something matched — an empty turn says nothing
+        # extra, the same choice consolidation's silence-on-nothing-due makes.
+        self.events.append({"type": "skills", "names": names})
+
     def delegate(self, persona: str, depth: int, task: str, ok: bool, ms: int) -> None:
         """A child loop that ran. Its calls are already `model` and `tool` events
         at `depth`; this is the summary that ties them to who was asked.
@@ -321,6 +326,8 @@ def print_one(trace_id: int) -> None:
                 f"{pad}  {i:>2}. model   {e['ms']:>6}ms  "
                 f"{e['in']:>5} in / {e['out']:<5} out  → {e['stop']}  {ran_as}{flag}"
             )
+        elif e["type"] == "skills":
+            print(f"  {i:>2}. skills    {', '.join(e['names'])}")
         else:
             mark = "ok" if e["ok"] else "ERROR"
             preview = e["preview"].replace("\n", "⏎")[:56]

@@ -8,6 +8,14 @@ def facts(*items):
         semantic.remember(item)
 
 
+def test_words_keeps_meaningful_tokens_only():
+    assert semantic.words("Tell me about the deploy pipeline") == ["deploy", "pipeline"]
+
+
+def test_words_lowercases_and_keeps_numbers():
+    assert semantic.words("Ninja v2 Release") == ["ninja", "release"]
+
+
 def test_gate_skips_when_nothing_is_remembered():
     retrieve, why, hits = semantic.gate("what am I building?")
     assert retrieve is False

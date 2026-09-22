@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ninja import mirror, trace
+from ninja import mirror, skills, trace
 
 # Redirected at import, not in a fixture, and that ordering is the point.
 # pytest imports conftest before any test module, and ninja/server.py opens the
@@ -79,3 +79,12 @@ def temp_mirror(tmp_path, monkeypatch):
     # The turn tests run the real hook, which would otherwise overwrite the
     # developer's own .ninja/MEMORY.md.
     monkeypatch.setattr(mirror, "PATH", tmp_path / "MEMORY.md")
+
+
+@pytest.fixture(autouse=True)
+def temp_skills(tmp_path, monkeypatch):
+    # Otherwise build_system would silently load the real skills/weekly-review
+    # SKILL.md off disk in every test that doesn't care about skills. A
+    # nonexistent directory behaves like "no skills/", the same as a real repo
+    # with none.
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")

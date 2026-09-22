@@ -48,15 +48,23 @@ STOPWORDS = frozenset({
 })
 
 
+def words(text: str) -> list[str]:
+    """Lowercased, meaningful tokens — 3+ letters/digits, minus stopwords.
+
+    Shared with ninja.skills so the fact gate and skill matching cannot drift
+    apart on what counts as a word.
+    """
+    return [w for w in re.findall(r"[A-Za-z0-9]{3,}", text.lower())
+            if w not in STOPWORDS]
+
+
 def _query(text: str) -> str:
     """FTS5 has its own syntax, and raw user input is not valid in it.
 
-    Keep meaningful words, drop everything else, OR them together. A term with
-    an apostrophe or a bare '-' is a syntax error, not a bad search.
+    OR the meaningful words together. A term with an apostrophe or a bare '-'
+    is a syntax error, not a bad search.
     """
-    words = [w for w in re.findall(r"[A-Za-z0-9]{3,}", text.lower())
-             if w not in STOPWORDS]
-    return " OR ".join(words)
+    return " OR ".join(words(text))
 
 
 def search(text: str, k: int = TOP_K) -> list[tuple[float, str]]:

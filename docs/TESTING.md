@@ -44,6 +44,7 @@ whether a test **can tell you something you did not already know**.
 | `tests/test_tools.py` | **The security boundary.** Path escapes, symlinks, hidden files, the allowlist | Nothing stubbed — real filesystem |
 | `tests/test_loop.py` | `run_turn`: tool rounds, result batching, the step cap, the model-error/harness-bug line | `StubClient` |
 | `tests/test_personas.py` | The loader as a parser of hostile input, and `schemas()` as enforcement point one | Real files in `tmp_path` |
+| `tests/test_skills.py` | The frontmatter parser as a parser of hostile input, the keyword matcher, and rendering | Real files in `tmp_path` |
 | `tests/test_semantic.py` | The gate's decisions and FTS5 query building | Real SQLite + FTS5 |
 | `tests/test_episodic.py` | The recall window, and the rule that it cannot start on an assistant message | Real SQLite |
 | `tests/test_trace.py` | Pricing, totals, truncation, the unpriced flag, and `ninja trace <id>` rendering | — |

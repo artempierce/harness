@@ -177,7 +177,7 @@ def test_a_turn_runs_as_one_persona_from_start_to_finish(monkeypatch):
     # Both model calls ran as the persona the turn started with.
     for call in stub.seen:
         assert [t["name"] for t in call["tools"]] == [
-            "list_files", "read_file", "remember", "add_rule", "delegate"
+            "list_files", "read_file", "remember", "add_rule", "propose_skill", "delegate"
         ]
 
 

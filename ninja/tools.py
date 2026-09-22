@@ -7,7 +7,7 @@ run() is what actually happens. The model never executes anything itself.
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from ninja import rules, semantic
+from ninja import rules, semantic, skills
 
 # The model chooses the path, so the path needs a boundary.
 ROOT = Path(__file__).resolve().parent.parent
@@ -86,6 +86,33 @@ SCHEMAS = [
         },
     },
     {
+        "name": "propose_skill",
+        "description": (
+            "Draft a new skill for this person to review and approve before it "
+            "takes effect. Use when you notice something they do repeatedly that "
+            "none of the current skills cover. This only stages the draft — "
+            "nothing is saved until they approve it."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Lowercase, hyphenated identifier, e.g. 'weekly-review'.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "One sentence: when this skill applies.",
+                },
+                "body": {
+                    "type": "string",
+                    "description": "The skill's instructions, in full.",
+                },
+            },
+            "required": ["name", "description", "body"],
+        },
+    },
+    {
         "name": "delegate",
         "description": (
             "Hand a self-contained job to another persona and get its answer back. "
@@ -140,7 +167,7 @@ def run(
     # The model can emit any JSON for an argument. A wrong type is its mistake,
     # so refuse it here as one instead of letting it surface as a TypeError or
     # a database error that the loop files under "our bug".
-    for key in ("path", "fact", "rule"):
+    for key in ("path", "fact", "rule", "name", "description", "body"):
         if key in args and not isinstance(args[key], str):
             raise ValueError(f"{key} must be a string")
     if name == "list_files":
@@ -162,6 +189,13 @@ def run(
         return f"remembered: {args['fact']}"
     if name == "add_rule":
         return rules.add_rule(persona, args["rule"])
+    if name == "propose_skill":
+        skill = skills.propose(args["name"], args["description"], args["body"])
+        return (
+            f"staged: {skill.name}\n\n"
+            f"Tell them to run `/approve-skill {skill.name}` to save it, "
+            f"or `/reject-skill {skill.name}` to discard it."
+        )
     if name == "delegate":
         # `spawn` is handed in rather than imported: starting a loop is
         # agent.py's job, and agent imports this module. Both arguments come

@@ -135,6 +135,9 @@ def test_a_symlink_to_a_hidden_file_is_refused(tmp_path, monkeypatch):
         ("list_files", {"path": None}),
         ("remember", {"fact": 5}),
         ("add_rule", {"rule": ["not", "a", "string"]}),
+        ("propose_skill", {"name": 5, "description": "d", "body": "b"}),
+        ("propose_skill", {"name": "n", "description": 5, "body": "b"}),
+        ("propose_skill", {"name": "n", "description": "d", "body": 5}),
     ],
 )
 def test_a_non_string_argument_is_refused_as_a_tool_error(name, args):
@@ -164,3 +167,18 @@ def test_a_small_file_is_returned_whole(tmp_path, monkeypatch):
     (root / "small.txt").write_text("hello")
 
     assert tools.run("read_file", {"path": "small.txt"}, ALL) == "hello"
+
+
+def test_propose_skill_stages_a_draft(tmp_path, monkeypatch):
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    result = tools.run(
+        "propose_skill",
+        {"name": "weekly-review", "description": "Run a weekly review.", "body": "1. Ask."},
+        ALL,
+    )
+    assert "staged: weekly-review" in result
+    assert "/approve-skill weekly-review" in result
+    (staged,) = skills.load_all(skills.PENDING_DIR)
+    assert staged.name == "weekly-review"

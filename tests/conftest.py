@@ -88,3 +88,4 @@ def temp_skills(tmp_path, monkeypatch):
     # nonexistent directory behaves like "no skills/", the same as a real repo
     # with none.
     monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending_skills")

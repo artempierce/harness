@@ -1,7 +1,7 @@
 # Ninja — Plan v2 (for approval)
 
-**Status (updated 2026-09-21): Phases A, B1 and C1 are built and merged. Next is
-D1 (skills). See §1 for what is done and §7 for the decisions as taken.**
+**Status (updated 2026-09-21): Phases A, B1, C1 and D1 are built and merged. Next is
+D2 (skills). See §1 for what is done and §7 for the decisions as taken.**
 
 **Why a new plan:** the original 15 layers were written from a whiteboard. Having
 now read waku-agent's actual source (`docs/WAKU-MAPPING.md`), some layers are
@@ -17,17 +17,18 @@ says plainly what is finished and what is not.
 ```
 DONE on main                                     NOT DONE
 ────────────────────────────────────────────     ─────────────────────────────────
- 1  Bare agent run                                D1 SKILL.md loader      ← next
- 2  Loop, tools, stop condition                   D2 create_skill (proposal)
- 3  Tracing                                       B2 Gate upgrade (deferred)
- 4  Episodic memory  (chat_log only)              11 Eval, diagnose, release
- 5  Semantic memory  (FTS5, keyword gate)         12 LangGraph port
- 6  Dashboard                                      9 The architect (proposals)
- 7  Personas + tool allowlists                    13 Registry + guarded set
- 8a Threads + routing                             14 Tool authoring
- 8b Delegation (C1, #16)                          15 Build pipeline
+ 1  Bare agent run                                D2 create_skill (proposal)  ← next
+ 2  Loop, tools, stop condition                   B2 Gate upgrade (deferred)
+ 3  Tracing                                       11 Eval, diagnose, release
+ 4  Episodic memory  (chat_log only)              12 LangGraph port
+ 5  Semantic memory  (FTS5, keyword gate)         9 The architect (proposals)
+ 6  Dashboard                                     13 Registry + guarded set
+ 7  Personas + tool allowlists                    14 Tool authoring
+ 8a Threads + routing                             15 Build pipeline
+ 8b Delegation (C1, #16)
  A1 Learned rules (#12)
  A2 MEMORY.md mirror (#14)
+ D1 SKILL.md loader
  10 Consolidation (B1, #13)
     + migrations, coverage, mutation testing
     + hardening batch 1 (#15)

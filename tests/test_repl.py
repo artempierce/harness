@@ -144,6 +144,89 @@ def test_an_explicit_persona_overrides_the_router(monkeypatch):
     ]
 
 
+# --- /approve-skill and /reject-skill ---------------------------------------
+
+
+def test_a_bare_approve_skill_lists_pending_proposals(tmp_path, monkeypatch, capsys):
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    agent.review_skill("/approve-skill")
+    out = capsys.readouterr().out
+    assert "weekly-review" in out
+    assert "Run a weekly review." in out
+
+
+def test_a_bare_approve_skill_with_nothing_pending_says_so(capsys):
+    agent.review_skill("/approve-skill")
+    assert "no pending" in capsys.readouterr().out
+
+
+def test_approve_skill_writes_the_draft_and_clears_it_from_pending(tmp_path, monkeypatch, capsys):
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    agent.review_skill("/approve-skill weekly-review")
+
+    (live,) = skills.load_all()
+    assert live.name == "weekly-review"
+    assert skills.load_all(skills.PENDING_DIR) == []
+    assert "approved" in capsys.readouterr().out
+
+
+def test_reject_skill_discards_the_draft(tmp_path, monkeypatch, capsys):
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    agent.review_skill("/reject-skill weekly-review")
+
+    assert skills.load_all(skills.PENDING_DIR) == []
+    assert "rejected" in capsys.readouterr().out
+
+
+def test_approving_an_unknown_skill_prints_the_error_and_does_not_raise(capsys):
+    agent.review_skill("/approve-skill nonesuch")
+    assert "no pending" in capsys.readouterr().out
+
+
+def test_a_skill_review_command_never_becomes_a_user_turn(tmp_path, monkeypatch, capsys):
+    # Same invariant as /persona, and for the same reason: an uncaught error
+    # here must not take the REPL down mid-conversation, and the command
+    # itself must never reach the model as a message.
+    from ninja import skills
+
+    from .conftest import StubClient
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    stub = StubClient([])
+    monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: stub)
+    monkeypatch.setattr(agent.episodic, "recall", lambda thread: [])
+
+    lines = iter(["/approve-skill weekly-review", ""])
+
+    def fake_input(prompt=""):
+        try:
+            return next(lines)
+        except StopIteration as end:
+            raise EOFError from end
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    agent.main()
+
+    assert stub.seen == []
+    assert "approved" in capsys.readouterr().out
+
+
 def _drive_main(monkeypatch, client, lines):
     """Run the real REPL with a scripted client and scripted input."""
     monkeypatch.setattr("anthropic.Anthropic", lambda *a, **k: client)

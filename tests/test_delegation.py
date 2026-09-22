@@ -108,6 +108,26 @@ def test_the_child_gets_its_own_learned_rules_and_no_facts(cast, monkeypatch):
     assert not any(e["type"] == "gate" for e in t.events)
 
 
+def test_the_child_gets_no_skills(cast, tmp_path, monkeypatch):
+    from ninja import skills
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    (tmp_path / "skills" / "helping").mkdir(parents=True)
+    (tmp_path / "skills" / "helping" / "SKILL.md").write_text(
+        "---\nname: helping\ndescription: Help count files in a project directory\n"
+        "---\n\nHELPING-SKILL-BODY\n"
+    )
+    cast("helper", ["read_file"], body="HELPER-INSTRUCTIONS")
+    client = StubClient([
+        delegate_call("d1", "helper", "help count the project files"),
+        text("three"),
+        text("it found three"),
+    ])
+    agent.run_turn(client, [{"role": "user", "content": "go"}], trace.Trace("go"), boss(),
+                    "PARENT-SYSTEM")
+    child_call = client.seen[1]
+    assert "HELPING-SKILL-BODY" not in repr(child_call)
+
+
 # --- subset rule -------------------------------------------------------------
 
 

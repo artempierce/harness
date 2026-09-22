@@ -81,6 +81,8 @@ ninja dashboard     the browser cockpit → localhost:7777
 ```
 
 In the REPL: `/persona` lists the cast, `/persona <name>` switches.
+`/approve-skill` and `/reject-skill` review what the model has proposed;
+either bare lists what's pending.
 
 The cockpit has chat on the right and the system on the left: overview, the
 loop, tools, guardrails, episodic and semantic memory, and a growth panel

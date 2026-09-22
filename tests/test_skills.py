@@ -3,6 +3,8 @@ they apply. Parsing mirrors ninja/personas.py; matching is pure and offline."""
 
 from pathlib import Path
 
+import pytest
+
 from ninja import agent, skills, trace
 
 from .conftest import a_persona
@@ -11,7 +13,7 @@ from .conftest import a_persona
 def _write(tmp_path, monkeypatch, name, frontmatter, body="do the thing\n"):
     monkeypatch.setattr(skills, "DIR", tmp_path)
     d = tmp_path / name
-    d.mkdir()
+    d.mkdir(parents=True, exist_ok=True)
     (d / "SKILL.md").write_text(f"---\n{frontmatter}---\n\n{body}")
 
 
@@ -202,3 +204,130 @@ def test_the_seed_skill_matches_a_natural_request(tmp_path, monkeypatch):
     monkeypatch.setattr(skills, "DIR", skills.ROOT / "skills")
     matched = skills.match("let's do my weekly review", skills.load_all())
     assert [s.name for s in matched] == ["weekly-review"]
+
+
+# --- staging: propose / approve / reject -----------------------------------
+
+
+def test_propose_stages_a_draft_without_touching_skills(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    proposed = skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    assert proposed.name == "weekly-review"
+    assert skills.load_all() == []  # nothing in the live directory yet
+    (staged,) = skills.load_all(skills.PENDING_DIR)
+    assert staged == proposed
+
+
+def test_a_description_with_a_colon_round_trips_through_yaml(tmp_path, monkeypatch):
+    # Naive string interpolation into frontmatter breaks on this; yaml.safe_dump
+    # must not.
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("planning", "Use when: planning a week ahead.", "body")
+    (staged,) = skills.load_all(skills.PENDING_DIR)
+    assert staged.description == "Use when: planning a week ahead."
+
+
+@pytest.mark.parametrize("name", ["Weekly-Review", "weekly_review", "-weekly", "../etc", ""])
+def test_a_malformed_name_is_refused(tmp_path, monkeypatch, name):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError):
+        skills.propose(name, "d", "body")
+
+
+def test_an_empty_description_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError, match="description"):
+        skills.propose("weekly-review", "   ", "body")
+
+
+def test_an_empty_body_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError, match="body"):
+        skills.propose("weekly-review", "d", "   ")
+
+
+def test_approve_moves_the_draft_into_the_live_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    approved = skills.approve("weekly-review")
+    assert approved.name == "weekly-review"
+    (live,) = skills.load_all()
+    assert live == approved
+    assert skills.load_all(skills.PENDING_DIR) == []  # the draft is gone
+
+
+def test_approve_overwrites_an_existing_skill_of_the_same_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    _write(tmp_path / "skills", monkeypatch, "weekly-review",
+           "name: weekly-review\ndescription: old version.\n", body="old body\n")
+    skills.propose("weekly-review", "new version.", "new body")
+    skills.approve("weekly-review")
+    (live,) = skills.load_all()
+    assert live.description == "new version."
+
+
+def test_approving_an_unknown_name_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError, match="no pending"):
+        skills.approve("nonesuch")
+
+
+def test_approve_re_validates_and_refuses_a_hand_corrupted_draft(tmp_path, monkeypatch):
+    # A draft hand-edited on disk between proposal and approval must not be
+    # trusted just because propose() once validated it.
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "d", "body")
+    (skills.PENDING_DIR / "weekly-review" / "SKILL.md").write_text("no frontmatter here\n")
+    with pytest.raises(ValueError, match="frontmatter"):
+        skills.approve("weekly-review")
+    # It's left in place, not silently dropped.
+    assert (skills.PENDING_DIR / "weekly-review" / "SKILL.md").exists()
+
+
+def test_reject_discards_the_draft(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "d", "body")
+    skills.reject("weekly-review")
+    assert skills.load_all(skills.PENDING_DIR) == []
+
+
+def test_rejecting_an_unknown_name_raises(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError, match="no pending"):
+        skills.reject("nonesuch")
+
+
+@pytest.mark.parametrize("name", ["../escape", "/etc/passwd", ".hidden"])
+def test_approve_and_reject_refuse_a_path_like_name(tmp_path, monkeypatch, name):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    with pytest.raises(ValueError, match="directory name"):
+        skills.approve(name)
+    with pytest.raises(ValueError, match="directory name"):
+        skills.reject(name)
+
+
+def test_approve_tolerates_a_non_empty_pending_directory(tmp_path, monkeypatch):
+    # A stray file next to SKILL.md must not turn a successful approve into an
+    # uncaught OSError from the cleanup rmdir.
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    (skills.PENDING_DIR / "weekly-review" / "extra.txt").write_text("stray file")
+
+    approved = skills.approve("weekly-review")
+
+    assert not (skills.PENDING_DIR / "weekly-review" / "SKILL.md").exists()
+    (live,) = skills.load_all()
+    assert live == approved
+
+
+def test_reject_tolerates_a_non_empty_pending_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    (skills.PENDING_DIR / "weekly-review" / "extra.txt").write_text("stray file")
+
+    skills.reject("weekly-review")
+
+    assert not (skills.PENDING_DIR / "weekly-review" / "SKILL.md").exists()

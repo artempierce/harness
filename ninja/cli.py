@@ -6,6 +6,8 @@
     ninja dashboard    the browser cockpit (layer 6)
 
 In the REPL: /persona lists the cast, /persona <name> switches.
+/approve-skill and /reject-skill review what the model has proposed;
+either bare lists what's pending.
 """
 
 import argparse

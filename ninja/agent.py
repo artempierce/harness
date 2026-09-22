@@ -42,7 +42,7 @@ MAX_TURN_COST_USD = 0.25
 # A child reads and reasons. Writes wait for the gate in layers 9 and 13-15, and
 # leaving them off also closes a cross-persona path: a hijacked orchestrator
 # cannot ask the coach to add_rule.
-WRITE_TOOLS = {"remember", "add_rule"}
+WRITE_TOOLS = {"remember", "add_rule", "propose_skill"}
 
 
 def ms_since(started: float) -> int:
@@ -304,6 +304,44 @@ def switch(command: str, current: Persona) -> Persona:
     return chosen
 
 
+def review_skill(command: str) -> None:
+    """Handle /approve-skill and /reject-skill. Both list what's pending when
+    given no name — there is one shared queue, so either command is a fair
+    way to ask what's in it. Like /persona, this never becomes part of the
+    conversation.
+    """
+    verb, _, name = command.partition(" ")
+    if verb not in ("/approve-skill", "/reject-skill"):
+        print(f"  unknown command: {verb}")
+        return
+    name = name.strip()
+    if not name:
+        pending = skills.load_all(skills.PENDING_DIR)
+        if not pending:
+            print("  no pending skill proposals")
+            return
+        print("  pending skill proposals:")
+        for s in pending:
+            print(f"   - {s.name}: {s.description}")
+        return
+    if verb == "/approve-skill":
+        existed = (skills.DIR / name / "SKILL.md").exists()
+        try:
+            skills.approve(name)
+        except (ValueError, OSError) as exc:
+            print(f"  {exc}")
+            return
+        suffix = " (replaced an existing skill)" if existed else ""
+        print(f"  ↳ skill approved: {name}{suffix}")
+        return
+    try:
+        skills.reject(name)
+    except (ValueError, OSError) as exc:
+        print(f"  {exc}")
+        return
+    print(f"  ↳ skill rejected: {name}")
+
+
 def main() -> None:
     client = anthropic.Anthropic()
     session = episodic.new_session()
@@ -328,6 +366,9 @@ def main() -> None:
             # router second-guessing the instruction. A bare /persona only
             # lists the cast, so it is not an instruction to go anywhere.
             forced = user_input.strip() != "/persona"
+            continue
+        if user_input.startswith("/approve-skill") or user_input.startswith("/reject-skill"):
+            review_skill(user_input)
             continue
 
         turn = Trace(user_input)

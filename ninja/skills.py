@@ -7,7 +7,9 @@ which is the point of choosing it over a classifier — a wrong match is
 explainable.
 """
 
+import re
 import sys
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,11 +19,13 @@ from ninja import semantic
 
 ROOT = Path(__file__).resolve().parent.parent
 DIR = ROOT / "skills"
+PENDING_DIR = ROOT / ".ninja" / "pending_skills"
 
 REQUIRED = {"name", "description"}
 MIN_OVERLAP = 2
 MAX_MATCHES = 2
 BODY_CAP = 3000
+NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
 @dataclass(frozen=True)
@@ -59,14 +63,21 @@ def _parse(text: str, source: Path) -> Skill:
     )
 
 
-def load_all() -> list[Skill]:
-    """Every skills/*/SKILL.md, freshly read. A handful of small files — no
-    cache, so an edit is live on the next message. A broken one is skipped
-    with a line to stderr; it never stops the rest from loading."""
-    if not DIR.is_dir():
+def load_all(directory: Path | None = None) -> list[Skill]:
+    """Every <directory>/*/SKILL.md, freshly read. A handful of small files —
+    no cache, so an edit is live on the next message. A broken one is skipped
+    with a line to stderr; it never stops the rest from loading.
+
+    Defaults to DIR (the live skills/); passing PENDING_DIR lists staged
+    drafts with the same parse-or-skip behavior, instead of a near-duplicate
+    function.
+    """
+    if directory is None:
+        directory = DIR
+    if not directory.is_dir():
         return []
     found = []
-    for d in sorted(DIR.iterdir()):
+    for d in sorted(directory.iterdir()):
         path = d / "SKILL.md"
         if not path.exists():
             continue
@@ -101,3 +112,78 @@ def format_section(matched: list[Skill]) -> str:
             body = body[:BODY_CAP] + "\n[truncated]"
         blocks.append(f"### {skill.name}\n{body}")
     return "Skills that apply to this request:\n\n" + "\n\n".join(blocks)
+
+
+def _safe_name(name: str) -> str:
+    """A skill name is a directory name, not a path — the same guard
+    personas.load applies to a persona name."""
+    if name != Path(name).name or name.startswith("."):
+        raise ValueError(f"a skill name is a directory name, not a path: {name!r}")
+    return name
+
+
+def _render(skill: Skill) -> str:
+    # yaml.safe_dump, not string interpolation: a description containing a
+    # colon ("Use when: planning a week ahead") would otherwise corrupt the
+    # frontmatter _parse has to read back.
+    frontmatter = yaml.safe_dump(
+        {"name": skill.name, "description": skill.description}, sort_keys=False
+    )
+    return f"---\n{frontmatter}---\n\n{skill.body}\n"
+
+
+def propose(name: str, description: str, body: str) -> Skill:
+    """Stage a draft at PENDING_DIR/<name>/SKILL.md. Nothing reads PENDING_DIR
+    except load_all(PENDING_DIR) itself — match() and format_section() only
+    ever see DIR — so a proposal cannot affect a turn until approve() moves it.
+    """
+    name = _safe_name(name.strip())
+    if not NAME_RE.match(name):
+        raise ValueError(
+            f"a skill name must be lowercase letters, digits and hyphens, "
+            f"starting with a letter: {name!r}"
+        )
+    description = " ".join(description.split())
+    if not description:
+        raise ValueError("description is empty")
+    body = body.strip()
+    if not body:
+        raise ValueError("body is empty")
+    skill = Skill(name=name, description=description, body=body)
+    target = PENDING_DIR / name / "SKILL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(_render(skill))
+    return skill
+
+
+def approve(name: str) -> Skill:
+    """Move a staged draft into DIR, re-validating it on the way — a draft
+    could have been hand-edited on disk since it was proposed.
+
+    Overwrites an existing skill of the same name. That's deliberate: a
+    re-proposal of an existing skill is the update path, and typing
+    /approve-skill is the confirmation an overwrite needs.
+    """
+    name = _safe_name(name)
+    path = PENDING_DIR / name / "SKILL.md"
+    if not path.exists():
+        raise ValueError(f"no pending skill proposal named {name!r}")
+    text = path.read_text()
+    skill = _parse(text, path)
+    target = DIR / name / "SKILL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    path.replace(target)  # one atomic rename on the same filesystem
+    with suppress(OSError):
+        path.parent.rmdir()
+    return skill
+
+
+def reject(name: str) -> None:
+    """Discard a staged draft."""
+    name = _safe_name(name)
+    path = PENDING_DIR / name / "SKILL.md"
+    if not path.exists():
+        raise ValueError(f"no pending skill proposal named {name!r}")
+    path.unlink()
+    with suppress(OSError):
+        path.parent.rmdir()

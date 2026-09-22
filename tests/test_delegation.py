@@ -243,6 +243,29 @@ def test_a_child_cannot_write_even_when_its_persona_declares_the_tools(cast):
     assert rules.rules_for("writer") == ""
 
 
+def test_a_child_cannot_propose_a_skill_even_when_its_persona_declares_it(
+    cast, tmp_path, monkeypatch
+):
+    # Same rule as remember/add_rule above: propose_skill queues something for
+    # a human to approve, and a delegated child does not get to queue anything.
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    cast("writer", ["read_file", "propose_skill"])
+    client = StubClient([
+        delegate_call("d1", "writer"),
+        call("w1", "propose_skill", {"name": "leaked", "description": "d", "body": "b"}),
+        text("could not"),
+        text("done"),
+    ])
+    run(client)
+
+    assert [t["name"] for t in client.seen[1]["tools"]] == ["read_file"]
+    (error,) = results_of(client.seen[2])
+    assert error["is_error"] and "allowlist" in error["content"]
+    assert skills.load_all(skills.PENDING_DIR) == []
+
+
 # --- per-turn cap ------------------------------------------------------------
 
 

@@ -1,6 +1,8 @@
 """Phase D1: skills — procedures matched to a message and injected only when
 they apply. Parsing mirrors ninja/personas.py; matching is pure and offline."""
 
+from pathlib import Path
+
 from ninja import agent, skills, trace
 
 from .conftest import a_persona
@@ -73,6 +75,33 @@ def test_one_broken_skill_does_not_stop_the_rest_loading(tmp_path, monkeypatch, 
 def test_a_missing_skills_dir_is_silently_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(skills, "DIR", tmp_path / "does-not-exist")
     assert skills.load_all() == []
+
+
+def test_an_unreadable_skill_is_skipped_and_warned_not_raised(tmp_path, monkeypatch, capsys):
+    # read_text can raise OSError (e.g. PermissionError, IsADirectoryError),
+    # not just ValueError — that must be skipped-and-warned like any other
+    # broken skill, not propagate and fail the whole turn.
+    monkeypatch.setattr(skills, "DIR", tmp_path)
+    (tmp_path / "good").mkdir()
+    (tmp_path / "good" / "SKILL.md").write_text(
+        "---\nname: good\ndescription: A fine skill.\n---\n\nbody\n"
+    )
+    (tmp_path / "locked").mkdir()
+    locked = tmp_path / "locked" / "SKILL.md"
+    locked.write_text("---\nname: locked\ndescription: d\n---\n\nbody\n")
+
+    real_read_text = Path.read_text
+
+    def flaky_read_text(self, *args, **kwargs):
+        if self == locked:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+
+    names = [s.name for s in skills.load_all()]
+    assert names == ["good"]
+    assert "skipped skill" in capsys.readouterr().err
 
 
 # --- matching --------------------------------------------------------------

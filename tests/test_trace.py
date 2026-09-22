@@ -63,6 +63,12 @@ def test_skills_event_records_the_matched_names():
 
 
 def test_the_trace_viewer_prints_every_kind_of_event(capsys):
+    # A trace holds three kinds of event, and a renderer that knows two of them
+    # does not fail — it draws the third as whatever its fallback branch is.
+    # That is exactly what the cockpit did with the gate step from layer 5 on:
+    # a phantom failed tool call, undefined(undefined), at the top of every
+    # trace anyone opened. `ninja trace <id>` is the same three branches in
+    # Python, and nothing covered it.
     t = trace.Trace("what am I building?")
     t.gate(True, "1 fact(s) matched", 1)
     t.skills(["weekly-review"])
@@ -82,6 +88,8 @@ def test_the_trace_viewer_prints_every_kind_of_event(capsys):
         assert expected in out, expected
     assert "route" in out
     assert "assistant → interview-coach" in out
+    # An event that fell through to a branch meant for another kind shows up as
+    # a missing key here rather than as a plausible-looking line.
     assert "None" not in out
 
 

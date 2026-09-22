@@ -1,7 +1,7 @@
 # Ninja — Plan v2 (for approval)
 
 **Status (updated 2026-09-21): Phases A, B1, C1 and D1 are built and merged. Next is
-D2 (skills). See §1 for what is done and §7 for the decisions as taken.**
+D2 (`create_skill`). See §1 for what is done and §7 for the decisions as taken.**
 
 **Why a new plan:** the original 15 layers were written from a whiteboard. Having
 now read waku-agent's actual source (`docs/WAKU-MAPPING.md`), some layers are
@@ -21,7 +21,7 @@ DONE on main                                     NOT DONE
  2  Loop, tools, stop condition                   B2 Gate upgrade (deferred)
  3  Tracing                                       11 Eval, diagnose, release
  4  Episodic memory  (chat_log only)              12 LangGraph port
- 5  Semantic memory  (FTS5, keyword gate)         9 The architect (proposals)
+ 5  Semantic memory  (FTS5, keyword gate)          9 The architect (proposals)
  6  Dashboard                                     13 Registry + guarded set
  7  Personas + tool allowlists                    14 Tool authoring
  8a Threads + routing                             15 Build pipeline

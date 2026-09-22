@@ -72,8 +72,8 @@ def load_all() -> list[Skill]:
             continue
         try:
             found.append(_parse(path.read_text(), path))
-        except ValueError as exc:
-            print(f"! skipped skill {path}: {exc}", file=sys.stderr)
+        except (ValueError, OSError) as exc:
+            print(f"! skipped skill: {exc}", file=sys.stderr)
     return found
 
 

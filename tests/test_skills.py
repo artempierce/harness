@@ -1,7 +1,9 @@
 """Phase D1: skills — procedures matched to a message and injected only when
 they apply. Parsing mirrors ninja/personas.py; matching is pure and offline."""
 
-from ninja import skills
+from ninja import agent, skills, trace
+
+from .conftest import a_persona
 
 
 def _write(tmp_path, monkeypatch, name, frontmatter, body="do the thing\n"):
@@ -135,3 +137,39 @@ def test_format_section_truncates_a_long_body():
 def test_format_section_does_not_truncate_a_short_body():
     short = a_skill(body="short body")
     assert "[truncated]" not in skills.format_section([short])
+
+
+# --- wired into build_system ------------------------------------------------
+
+
+def _seed(tmp_path, monkeypatch, name="weekly-review",
+          description="Run a weekly review of wins and blockers",
+          body="1. Ask what got done.\n2. List blockers.\n3. Pick three priorities."):
+    monkeypatch.setattr(skills, "DIR", tmp_path)
+    d = tmp_path / name
+    d.mkdir()
+    (d / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\n\n{body}\n")
+
+
+def test_a_matching_message_gets_the_skill_injected(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+    turn = trace.Trace("x")
+    system = agent.build_system("time for my weekly review", turn, a_persona())
+    assert "### weekly-review" in system
+    assert "Ask what got done" in system
+    assert [e for e in turn.events if e["type"] == "skills"][0]["names"] == ["weekly-review"]
+
+
+def test_a_non_matching_message_gets_nothing_injected(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+    turn = trace.Trace("x")
+    system = agent.build_system("what is 2 + 2?", turn, a_persona())
+    assert "weekly-review" not in system
+    assert not [e for e in turn.events if e["type"] == "skills"]
+
+
+def test_the_seed_skill_matches_a_natural_request(tmp_path, monkeypatch):
+    # Loads the real skills/weekly-review/SKILL.md, not a throwaway one.
+    monkeypatch.setattr(skills, "DIR", skills.ROOT / "skills")
+    matched = skills.match("let's do my weekly review", skills.load_all())
+    assert [s.name for s in matched] == ["weekly-review"]

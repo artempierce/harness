@@ -15,7 +15,7 @@ import time
 import anthropic
 from dotenv import load_dotenv
 
-from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, tools
+from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, skills, tools
 from ninja.personas import Persona
 from ninja.trace import PRICING, Trace
 
@@ -115,7 +115,7 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
     """Assemble the system prompt for this turn.
 
     The persona supplies the instructions; the retrieval gate decides whether
-    facts are worth their tokens on top of them.
+    facts are worth their tokens on top of them; matched skills go last.
     """
     try:
         retrieve, why, hits = semantic.gate(user_input)
@@ -130,9 +130,13 @@ def build_system(user_input: str, trace: Trace, persona: Persona) -> str:
         print(f"  ! retrieval failed, continuing without facts: {exc}", file=sys.stderr)
     trace.gate(retrieve, why, len(hits))
     system = _instructions(persona, 0)
-    if not retrieve:
-        return system
-    return system + "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
+    if retrieve:
+        system += "\n\nWhat you know about this person:\n" + semantic.as_context(hits)
+    matched = skills.match(user_input, skills.load_all())
+    if matched:
+        trace.skills([s.name for s in matched])
+        system += "\n\n" + skills.format_section(matched)
+    return system
 
 
 def run_turn(

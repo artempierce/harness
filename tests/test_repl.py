@@ -196,6 +196,52 @@ def test_approving_an_unknown_skill_prints_the_error_and_does_not_raise(capsys):
     assert "no pending" in capsys.readouterr().out
 
 
+def test_a_typo_d_verb_is_not_treated_as_approve_or_reject(tmp_path, monkeypatch, capsys):
+    # /approve-skills (typo) must not silently fall into the reject branch and
+    # destroy a draft the user meant to keep.
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    agent.review_skill("/approve-skills weekly-review")
+
+    (staged,) = skills.load_all(skills.PENDING_DIR)
+    assert staged.name == "weekly-review"
+    assert "unknown command" in capsys.readouterr().out
+
+
+def test_an_oserror_from_approve_does_not_take_down_the_repl(monkeypatch, capsys):
+    from ninja import skills
+
+    def boom(name):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(skills, "approve", boom)
+
+    agent.review_skill("/approve-skill weekly-review")
+    assert "disk full" in capsys.readouterr().out
+
+
+def test_approving_a_second_version_of_the_same_skill_announces_the_replacement(
+    tmp_path, monkeypatch, capsys
+):
+    from ninja import skills
+
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+
+    agent.review_skill("/approve-skill weekly-review")
+    first_out = capsys.readouterr().out
+    assert "replaced" not in first_out
+
+    skills.propose("weekly-review", "v2.", "1. Ask what got done.\n2. New step.")
+    agent.review_skill("/approve-skill weekly-review")
+    second_out = capsys.readouterr().out
+    assert "replaced an existing skill" in second_out
+
+
 def test_a_skill_review_command_never_becomes_a_user_turn(tmp_path, monkeypatch, capsys):
     # Same invariant as /persona, and for the same reason: an uncaught error
     # here must not take the REPL down mid-conversation, and the command

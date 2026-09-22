@@ -311,6 +311,9 @@ def review_skill(command: str) -> None:
     conversation.
     """
     verb, _, name = command.partition(" ")
+    if verb not in ("/approve-skill", "/reject-skill"):
+        print(f"  unknown command: {verb}")
+        return
     name = name.strip()
     if not name:
         pending = skills.load_all(skills.PENDING_DIR)
@@ -321,14 +324,22 @@ def review_skill(command: str) -> None:
         for s in pending:
             print(f"   - {s.name}: {s.description}")
         return
-    action = skills.approve if verb == "/approve-skill" else skills.reject
+    if verb == "/approve-skill":
+        existed = (skills.DIR / name / "SKILL.md").exists()
+        try:
+            skills.approve(name)
+        except (ValueError, OSError) as exc:
+            print(f"  {exc}")
+            return
+        suffix = " (replaced an existing skill)" if existed else ""
+        print(f"  ↳ skill approved: {name}{suffix}")
+        return
     try:
-        action(name)
-    except ValueError as exc:
+        skills.reject(name)
+    except (ValueError, OSError) as exc:
         print(f"  {exc}")
         return
-    verdict = "approved" if verb == "/approve-skill" else "rejected"
-    print(f"  ↳ skill {verdict}: {name}")
+    print(f"  ↳ skill rejected: {name}")
 
 
 def main() -> None:

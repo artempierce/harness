@@ -9,6 +9,7 @@ explainable.
 
 import re
 import sys
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -167,12 +168,13 @@ def approve(name: str) -> Skill:
     path = PENDING_DIR / name / "SKILL.md"
     if not path.exists():
         raise ValueError(f"no pending skill proposal named {name!r}")
-    skill = _parse(path.read_text(), path)
+    text = path.read_text()
+    skill = _parse(text, path)
     target = DIR / name / "SKILL.md"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(path.read_text())
-    path.unlink()
-    path.parent.rmdir()
+    path.replace(target)  # one atomic rename on the same filesystem
+    with suppress(OSError):
+        path.parent.rmdir()
     return skill
 
 
@@ -183,4 +185,5 @@ def reject(name: str) -> None:
     if not path.exists():
         raise ValueError(f"no pending skill proposal named {name!r}")
     path.unlink()
-    path.parent.rmdir()
+    with suppress(OSError):
+        path.parent.rmdir()

@@ -306,3 +306,28 @@ def test_approve_and_reject_refuse_a_path_like_name(tmp_path, monkeypatch, name)
         skills.approve(name)
     with pytest.raises(ValueError, match="directory name"):
         skills.reject(name)
+
+
+def test_approve_tolerates_a_non_empty_pending_directory(tmp_path, monkeypatch):
+    # A stray file next to SKILL.md must not turn a successful approve into an
+    # uncaught OSError from the cleanup rmdir.
+    monkeypatch.setattr(skills, "DIR", tmp_path / "skills")
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    (skills.PENDING_DIR / "weekly-review" / "extra.txt").write_text("stray file")
+
+    approved = skills.approve("weekly-review")
+
+    assert not (skills.PENDING_DIR / "weekly-review" / "SKILL.md").exists()
+    (live,) = skills.load_all()
+    assert live == approved
+
+
+def test_reject_tolerates_a_non_empty_pending_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills, "PENDING_DIR", tmp_path / "pending")
+    skills.propose("weekly-review", "Run a weekly review.", "1. Ask what got done.")
+    (skills.PENDING_DIR / "weekly-review" / "extra.txt").write_text("stray file")
+
+    skills.reject("weekly-review")
+
+    assert not (skills.PENDING_DIR / "weekly-review" / "SKILL.md").exists()

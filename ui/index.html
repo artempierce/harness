@@ -415,6 +415,9 @@ function step(e, i) {
   if (e.type === 'skills') return `<div class="step"><span class="k">${i+1}</span>
     <span class="k">skills</span>
     <span class="d">${e.names.map(esc).join(', ')}</span></div>`;
+  if (e.type === 'judge') return `<div class="step"><span class="k">${i+1}</span>
+    <span class="k">judge</span>
+    <span class="d">${e.passed ? 'PASS' : 'FAIL'} — ${esc(e.criterion)}</span></div>`;
   // Rows written before delegation have no depth, so it is read as 0.
   const pad = (e.depth || 0) * 18;
   const indent = pad ? ` style="margin-left:${pad}px"` : '';

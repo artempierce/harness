@@ -193,6 +193,12 @@ class Trace:
         # extra, the same choice consolidation's silence-on-nothing-due makes.
         self.events.append({"type": "skills", "names": names})
 
+    def judge(self, criterion: str, passed: bool) -> None:
+        """The verdict this trace's own model call reached. The prompt, the
+        model, and the answer are already this trace's user_input/model
+        event/reply; this only names the criterion and the result."""
+        self.events.append({"type": "judge", "criterion": criterion, "passed": passed})
+
     def delegate(self, persona: str, depth: int, task: str, ok: bool, ms: int) -> None:
         """A child loop that ran. Its calls are already `model` and `tool` events
         at `depth`; this is the summary that ties them to who was asked.
@@ -328,6 +334,9 @@ def print_one(trace_id: int) -> None:
             )
         elif e["type"] == "skills":
             print(f"  {i:>2}. skills    {', '.join(e['names'])}")
+        elif e["type"] == "judge":
+            mark = "PASS" if e["passed"] else "FAIL"
+            print(f"  {i:>2}. judge     {mark:<4}  {e['criterion']}")
         else:
             mark = "ok" if e["ok"] else "ERROR"
             preview = e["preview"].replace("\n", "⏎")[:56]

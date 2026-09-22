@@ -72,6 +72,7 @@ def test_the_trace_viewer_prints_every_kind_of_event(capsys):
     t = trace.Trace("what am I building?")
     t.gate(True, "1 fact(s) matched", 1)
     t.skills(["weekly-review"])
+    t.judge("replies in one word", True)
     t.route("interview-coach", "assistant", "moved on 'quiz me'", "claude-haiku-4-5",
              response([block(type="text", text="interview-coach")], "end_turn"), 12)
     t.model("claude-haiku-4-5", response([], "tool_use", (120, 18)), 340, "assistant")
@@ -84,7 +85,8 @@ def test_the_trace_viewer_prints_every_kind_of_event(capsys):
 
     for expected in ["gate", "retrieve 1", "1 fact(s) matched", "model",
                       "read_file", "assistant", "An agent harness.",
-                      "skills", "weekly-review"]:
+                      "skills", "weekly-review", "judge", "PASS",
+                      "replies in one word"]:
         assert expected in out, expected
     assert "route" in out
     assert "assistant → interview-coach" in out
@@ -100,3 +102,12 @@ def test_the_viewer_says_when_a_call_was_not_priced(capsys):
     t.model("claude-next-9", response([], "end_turn", (1000, 100)), 10, "assistant")
     trace.print_one(t.finish("hi"))
     assert "unpriced" in capsys.readouterr().out
+
+
+def test_the_viewer_shows_a_failed_judge_verdict(capsys):
+    t = trace.Trace("x")
+    t.judge("mentions ninja", False)
+    trace.print_one(t.finish("no mention"))
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+    assert "mentions ninja" in out

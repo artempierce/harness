@@ -42,6 +42,32 @@ class Verdict:
     trace_id: int
 
 
+@dataclass(frozen=True)
+class HealthScore:
+    persona: str
+    passed: int
+    total: int
+    rate: float
+
+
+def health_scores(verdicts: list[tuple[str, Verdict]]) -> dict[str, HealthScore]:
+    """Group verdicts by persona and compute a pass rate per persona. Pure —
+    no Trace, no database, no side effects; the money and the writes already
+    happened when each Verdict was produced. A persona absent from `verdicts`
+    is absent from the result: there's no rate to report for zero cases.
+    """
+    by_persona: dict[str, list[Verdict]] = {}
+    for persona, verdict in verdicts:
+        by_persona.setdefault(persona, []).append(verdict)
+
+    scores = {}
+    for persona, group in by_persona.items():
+        passed = sum(v.passed for v in group)
+        total = len(group)
+        scores[persona] = HealthScore(persona, passed, total, passed / total)
+    return scores
+
+
 class JudgeParseError(ValueError):
     """The judge's reply didn't parse as PASS/FAIL. `trace_id` points at the
     full prompt/model/reply — `ninja trace <id>` to see why."""

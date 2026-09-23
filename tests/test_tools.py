@@ -182,3 +182,9 @@ def test_propose_skill_stages_a_draft(tmp_path, monkeypatch):
     assert "/approve-skill weekly-review" in result
     (staged,) = skills.load_all(skills.PENDING_DIR)
     assert staged.name == "weekly-review"
+
+
+def test_search_web_and_fetch_url_reject_non_string_args():
+    for name, args in [("search_web", {"query": 5}), ("fetch_url", {"url": 5})]:
+        with pytest.raises(ValueError, match="must be a string"):
+            tools.run(name, args, ALL)

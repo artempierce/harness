@@ -13,6 +13,7 @@ import sys
 import time
 
 import anthropic
+import httpx
 from dotenv import load_dotenv
 
 from ninja import consolidation, episodic, mirror, personas, router, rules, semantic, skills, tools
@@ -190,17 +191,19 @@ def run_turn(
             started = time.perf_counter()
             # Only the ways a model-supplied name or argument can be wrong: a
             # refusal or a bad path (ValueError), a missing required argument
-            # (KeyError), a path that is not there or not readable (OSError).
-            # Those are the model's mistakes and belong back in the transcript
-            # for it to explain. Anything else — a wrong signature, a bug in a
-            # tool — is ours, and catching it here would file it as an ordinary
-            # tool error that looks exactly like a legitimate refusal.
+            # (KeyError), a path that is not there or not readable (OSError),
+            # or a network call that failed the way networks do (httpx.HTTPError
+            # — a timeout, a refused connection, a non-2xx status). Those are
+            # the model's mistakes or the world's, and belong back in the
+            # transcript for it to explain. Anything else — a wrong signature,
+            # a bug in a tool — is ours, and catching it here would file it as
+            # an ordinary tool error that looks exactly like a legitimate refusal.
             try:
                 output = tools.run(
                     block.name, block.input, persona.tools, persona=persona.name, spawn=spawn
                 )
                 failed = False
-            except (ValueError, KeyError, OSError) as exc:
+            except (ValueError, KeyError, OSError, httpx.HTTPError) as exc:
                 output, failed = str(exc), True
             trace.tool(block.name, block.input, not failed, output, ms_since(started), depth)
             results.append(

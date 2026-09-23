@@ -3,6 +3,10 @@
 A judge is not a conversation. It never sees the expected answer, only the
 criterion and the output; a wrong verdict is explainable from its own trace
 row the same way a wrong match is explainable in ninja/skills.py.
+
+Also holds Phase E1b's HealthScore and health_scores(), which group verdicts
+by persona and compute a pass rate per persona, enabling persona-level
+evaluation reporting.
 """
 
 from dataclasses import dataclass

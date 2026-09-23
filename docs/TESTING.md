@@ -361,9 +361,15 @@ one where it is the only option, and hold it to rules:
 - **Binary, against a named criterion per case.** Not a 1–10 score. "Did it ask
   a question instead of answering?" is auditable; "quality: 7" is not.
 - **The judge never sees the expected prose**, only the criterion and the output.
-- **The judge is a persona** — it has instructions, a tool list (empty), and a
-  model, and it lives in `personas/` like the rest of the cast. It gets versioned
-  and reviewed like the rest of the cast too.
+- **The judge is a persona-shaped thing** — it has instructions, an empty tool
+  list and a model, but it is a Python constant in `ninja/judge.py`, not a file
+  in `personas/`. `personas.all()` has no "internal only" concept — it feeds
+  the router, `/persona`'s listing, and the delegation subset rule — so a real
+  `PERSONA.md` here would make "judge" a routable conversation thread a real
+  message could land in by accident. See
+  `docs/superpowers/specs/2026-09-22-e1a-judge-design.md` §3.2. It's still
+  reviewed like the rest of the cast — a Python constant goes through the same
+  review as any other code.
 - **Every verdict is reproducible from what was stored**: the judge's model id,
   its prompt, and its answer go into the run record beside the trace id.
 - **A judge failure is a diagnosis prompt, not a result.** Read the trace.

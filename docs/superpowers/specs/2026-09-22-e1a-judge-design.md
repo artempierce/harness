@@ -216,3 +216,10 @@ if (e.type === 'judge') return `<div class="step"><span class="k">${i+1}</span>
   awkward in practice, which nothing yet says it will be.
 - **No cost ceiling in `judge()` itself**: a ceiling is a property of a run
   of many calls, which this ticket doesn't build yet (§2).
+- **Every judge call gets its own trace row, counted like any turn.**
+  Deliberate (keeps each verdict independently inspectable, §3.1) — but the
+  consequence is that a future run of many judge calls (the eval runner, E1b)
+  will inflate the cockpit's turn/cost counters unless it filters on
+  `persona != 'judge'`. The rows are already filterable — `Trace.finish()`
+  stamps `persona` from the judge's own `model` event. Noted here so E1b
+  doesn't rediscover it.

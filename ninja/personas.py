@@ -35,6 +35,8 @@ REQUIRED = {"name", "description", "tools", "model"}
 
 @dataclass(frozen=True)
 class Persona:
+    """One persona, loaded from a PERSONA.md file."""
+
     name: str
     description: str
     instructions: str
@@ -51,6 +53,8 @@ class Persona:
 
 
 def _parse(text: str, source: Path) -> Persona:
+    """Parse one PERSONA.md's frontmatter and body into a Persona, validating
+    shape as it goes."""
     if not text.lstrip().startswith("---"):
         raise ValueError(f"{source}: no frontmatter — a PERSONA.md starts with ---")
     _, frontmatter, body = text.lstrip().split("---", 2)
@@ -123,6 +127,7 @@ def _fallback() -> Persona:
 
 
 def load(name: str) -> Persona:
+    """Load the persona named `name` from personas/<name>/PERSONA.md."""
     # The name indexes a directory, and it arrives from a chat request body, a
     # /persona line and the cockpit's switcher. Anything with a path in it
     # reads a PERSONA.md from outside personas/ altogether.
@@ -145,6 +150,7 @@ def load(name: str) -> Persona:
 
 
 def all() -> list[Persona]:  # noqa: A001 — reads as personas.all()
+    """Every persona defined under personas/, loaded fresh."""
     if not DIR.is_dir():
         return [_fallback()]
     found = [load(d.name) for d in sorted(DIR.iterdir()) if (d / "PERSONA.md").exists()]

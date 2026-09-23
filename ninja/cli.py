@@ -16,6 +16,7 @@ from ninja import agent, trace
 
 
 def main() -> None:
+    """Parse argv and dispatch to the dashboard, the trace viewer, or the REPL."""
     parser = argparse.ArgumentParser(
         prog="ninja",
         description="Ninja — a personal assistant that is a cast of agents.",

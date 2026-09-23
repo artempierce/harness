@@ -20,6 +20,7 @@ TOP_K = 3
 def remember(
     content: str, source: str = "told", trace_id: int | None = None, conn=None
 ) -> int:
+    """Insert one fact row and return its id."""
     # A caller that passes its own connection is inside a transaction of its
     # own and owns the commit. Committing or closing here would end that
     # transaction halfway through.
@@ -68,6 +69,8 @@ def _query(text: str) -> str:
 
 
 def search(text: str, k: int = TOP_K) -> list[tuple[float, str]]:
+    """The k best-matching facts for `text`, as (bm25 score, content) pairs —
+    lower score means a closer match. Empty if nothing in `text` is searchable."""
     query = _query(text)
     if not query:
         return []
@@ -107,6 +110,7 @@ def gate(text: str) -> tuple[bool, str, list[tuple[float, str]]]:
 
 
 def as_context(hits: list[tuple[float, str]]) -> str:
+    """Render search hits as a bullet list, ready to drop into the prompt."""
     return "\n".join(f"- {content}" for _, content in hits)
 
 
@@ -118,6 +122,7 @@ def count() -> int:
 
 
 def all_facts(limit: int = 50) -> list[dict]:
+    """The most recent facts, newest first, as dicts."""
     conn = connect()
     rows = conn.execute(
         "SELECT rowid, content, source, trace_id, created_at FROM facts"

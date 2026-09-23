@@ -43,18 +43,21 @@ def _safe(text: str) -> str:
 
 
 def _one_line(text: str) -> str:
+    """Collapse `text` to a single line."""
     # One bullet is one line, as with rules: a newline would start a new line
     # of the file that the text could then use to pose as structure.
     return " ".join(text.split())
 
 
 def _unreadable(exc: Exception) -> str:
+    """A one-line, escaped message saying a section could not be read."""
     # The reason is text from outside this file, so it gets the same treatment
     # as stored text: one line, and no leading `#`.
     return _safe(f"_could not read: {_one_line(f'{type(exc).__name__}: {exc}')[:120]}_")
 
 
 def _section(heading: str, build) -> list[str]:
+    """Run `build`, or fall back to an error line under `heading` if it raises."""
     # A section that cannot be read says so in the file. Failing the whole write
     # would leave the previous file in place looking fine, and hide exactly the
     # rule or fact that broke it.
@@ -65,10 +68,12 @@ def _section(heading: str, build) -> list[str]:
 
 
 def _more(hidden: int) -> list[str]:
+    """An overflow footer line naming how many entries were left out, or none."""
     return [f"_{hidden} more not shown_"] if hidden > 0 else []
 
 
 def _facts() -> list[str]:
+    """Render the Facts section: a count, then up to MAX_FACTS_SHOWN lines."""
     total = semantic.count()
     shown = semantic.all_facts(MAX_FACTS_SHOWN)
     lines = [f"- {_one_line(f['content'])}  {f['source']} · {f['created_at'][:10]}" for f in shown]
@@ -76,6 +81,7 @@ def _facts() -> list[str]:
 
 
 def _episodes() -> list[str]:
+    """Render the Episodes section: a count, then up to MAX_EPISODES_SHOWN lines."""
     conn = connect()
     try:
         total = conn.execute("SELECT COUNT(*) FROM episodes").fetchone()[0]
@@ -90,6 +96,7 @@ def _episodes() -> list[str]:
 
 
 def _rules() -> list[str]:
+    """Render the Learned rules section: one subheading and body per rules file."""
     out = ["## Learned rules"]
     for path in sorted(rules.DIR.glob("*.md")) if rules.DIR.is_dir() else []:
         try:
@@ -102,6 +109,7 @@ def _rules() -> list[str]:
 
 
 def _render() -> str:
+    """Assemble the full markdown page from the header and each section."""
     parts = [
         HEADER.splitlines(),
         _section("## Facts", _facts),
@@ -112,6 +120,7 @@ def _render() -> str:
 
 
 def _replace(text: str) -> None:
+    """Write `text` to PATH atomically, via a temp file swapped in with os.replace."""
     # Same directory as the target: os.replace is only atomic within one
     # filesystem, and a reader must never see half a file.
     PATH.parent.mkdir(parents=True, exist_ok=True)

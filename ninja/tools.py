@@ -137,6 +137,8 @@ SCHEMAS = [
 
 
 def _resolve(path: str) -> Path:
+    """Turn a model-supplied path into an absolute one inside ROOT, refusing
+    anything that escapes it or touches a dotfile."""
     target = (ROOT / path).resolve()
     if not target.is_relative_to(ROOT):
         raise ValueError(f"path escapes the project root: {path}")
@@ -155,6 +157,12 @@ def run(
     persona: str | None = None,
     spawn: Callable[[str, str], str] | None = None,
 ) -> str:
+    """Validate then execute one tool call by name, returning its text result.
+
+    Raises ValueError for anything that is the model's mistake (an unlisted
+    tool, a bad argument type, a path outside the boundary); dispatches to the
+    handler for `name` otherwise.
+    """
     # The allowlist is enforced here as well as by filtering the schemas,
     # because filtering is advisory: a model that has seen a tool name earlier
     # in the conversation can still emit it. One gate, first — a per-branch

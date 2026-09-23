@@ -28,6 +28,7 @@ _client: anthropic.Anthropic | None = None
 
 
 def client() -> anthropic.Anthropic:
+    """The shared Anthropic client, built lazily."""
     # Built on first use, not at import, so `ninja trace` works without a key.
     global _client
     if _client is None:
@@ -36,6 +37,7 @@ def client() -> anthropic.Anthropic:
 
 
 def rows_to_dicts(cursor) -> list[dict]:
+    """A cursor's remaining rows as dicts, keyed by column name."""
     keys = [c[0] for c in cursor.description]
     return [dict(zip(keys, row, strict=True)) for row in cursor.fetchall()]
 
@@ -47,6 +49,7 @@ class Message(BaseModel):
 
 @app.get("/")
 def index():
+    """Serve the cockpit's single HTML page."""
     # Without Cache-Control the browser falls back to heuristic freshness and
     # may serve a stale copy without asking. This page changes every layer, so
     # it must revalidate — the ETag still makes that a 304 in the common case.
@@ -55,6 +58,8 @@ def index():
 
 @app.post("/api/chat")
 def chat(message: Message):
+    """Handle one chat turn: route it to a persona, run the agent loop, then
+    trace and save the result."""
     turn = trace.Trace(message.text)
     try:
         current = episodic.current_thread(personas.DEFAULT)
@@ -106,6 +111,7 @@ def chat(message: Message):
 
 @app.get("/api/traces")
 def traces(limit: int = 30):
+    """The most recent traces, summary columns only."""
     conn = trace.connect()
     out = rows_to_dicts(
         conn.execute(
@@ -121,6 +127,7 @@ def traces(limit: int = 30):
 
 @app.get("/api/traces/{trace_id}")
 def one_trace(trace_id: int):
+    """One full trace row, with its events JSON parsed."""
     conn = trace.connect()
     found = rows_to_dicts(
         conn.execute("SELECT * FROM traces WHERE id = ?", (trace_id,))
@@ -134,6 +141,8 @@ def one_trace(trace_id: int):
 
 @app.get("/api/stats")
 def stats():
+    """Aggregate dashboard numbers: totals, tool-call and gate counts across
+    every trace."""
     conn = trace.connect()
     turns, cost, tin, tout, avg = conn.execute(
         "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0), COALESCE(SUM(input_tokens), 0),"
@@ -163,6 +172,7 @@ def stats():
 
 @app.get("/api/tools")
 def tools_panel():
+    """What each tool looks like to the model, for the cockpit's tools panel."""
     return [
         {
             "name": t["name"],
@@ -216,6 +226,7 @@ SCAFFOLD = set()
 
 @app.get("/api/personas")
 def personas_panel():
+    """The cast, for the cockpit's persona switcher."""
     # A load error here is a broken file on disk, not a broken request. Raising
     # it as an HTTPException keeps the file and the reason in the response body;
     # letting it escape would reach the browser as a bare 500 and the panel
@@ -249,6 +260,7 @@ def memory_panel():
 
 @app.get("/api/facts")
 def facts_panel():
+    """Known facts, plus the last 20 retrieval-gate decisions across all traces."""
     conn = trace.connect()
     reasons = rows_to_dicts(conn.execute("SELECT events FROM traces"))
     conn.close()
@@ -258,6 +270,8 @@ def facts_panel():
 
 @app.get("/api/system")
 def system_panel():
+    """Which layers are built, scaffolded or still planned, for the cockpit's
+    progress panel."""
     # No "model" here. Since layer 7 the model belongs to a persona, and
     # /api/personas is the one place that reports it — a second copy is how a
     # panel ends up naming a model no turn has run on.

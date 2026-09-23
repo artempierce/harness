@@ -23,12 +23,14 @@ _NAME = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
 def _path(persona: str) -> Path:
+    """The rules file for `persona`, after checking the name is a safe filename."""
     if not _NAME.fullmatch(persona):
         raise ValueError(f"not a valid persona name: {persona!r}")
     return DIR / f"{persona}.md"
 
 
 def rules_for(persona: str) -> str:
+    """This persona's learned rules, as one string, or "" if it has none."""
     # Read on every turn for every persona, and personas.load accepts any name
     # matching its directory. A name that could never have had a rules file
     # written has none — that is not an error, and raising would take the turn down.
@@ -39,6 +41,7 @@ def rules_for(persona: str) -> str:
 
 
 def add_rule(persona: str | None, rule: str) -> str:
+    """Validate `rule` and append it as one bullet to persona's rules file."""
     if persona is None:
         raise ValueError("add_rule needs to know which persona is speaking.")
     path = _path(persona)

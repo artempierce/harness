@@ -21,12 +21,14 @@ RECALL = 6
 
 
 def new_session() -> str:
+    """A fresh, short random id for one process run."""
     return uuid.uuid4().hex[:12]
 
 
 def save(
     session_id: str, role: str, content: str, trace_id: int | None, thread: str
 ) -> None:
+    """Write one chat_log row — either the user's message or the reply."""
     conn = connect()
     conn.execute(
         "INSERT INTO chat_log (session_id, role, content, created_at, trace_id, thread)"
@@ -109,6 +111,7 @@ def current_thread(default: str) -> str:
 
 
 def history(limit: int = 50) -> list[dict]:
+    """The most recent chat_log rows across all threads, newest first, as dicts."""
     conn = connect()
     rows = conn.execute(
         "SELECT id, session_id, role, content, created_at, trace_id, thread"
@@ -121,6 +124,8 @@ def history(limit: int = 50) -> list[dict]:
 
 
 def stats() -> dict:
+    """Summary counts for the memory panel: total messages, distinct sessions,
+    and the earliest timestamp on record."""
     conn = connect()
     messages, sessions, first = conn.execute(
         "SELECT COUNT(*), COUNT(DISTINCT session_id), MIN(created_at) FROM chat_log"

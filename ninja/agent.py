@@ -228,6 +228,7 @@ def run_turn(
 
 
 def _stop(messages: list, why: str) -> str:
+    """Append a synthetic assistant message saying why the loop stopped, and return it."""
     stopped = f"[stopped: {why}]"
     messages.append({"role": "assistant", "content": stopped})
     return stopped
@@ -346,6 +347,8 @@ def review_skill(command: str) -> None:
 
 
 def main() -> None:
+    """Run the interactive REPL: read a line, route it, run the turn, then
+    save and print the reply."""
     client = anthropic.Anthropic()
     session = episodic.new_session()
     cast = personas.all()

@@ -60,6 +60,7 @@ def migrate(conn: sqlite3.Connection) -> None:
 
 
 def connect() -> sqlite3.Connection:
+    """Open the project's sqlite database, creating and migrating it first if needed."""
     DB.parent.mkdir(exist_ok=True)
     # isolation_level=None hands transaction control to migrate(), which needs
     # its BEGIN to mean what it says. Everything else here is single-statement,
@@ -94,6 +95,7 @@ def _check_facts_table(conn: sqlite3.Connection) -> None:
 
 
 def price(model: str, input_tokens: int, output_tokens: int) -> float:
+    """USD cost of one model call, at `model`'s per-million-token rate (0 if unpriced)."""
     rate_in, rate_out = PRICING.get(model, (0.0, 0.0))
     return (input_tokens * rate_in + output_tokens * rate_out) / 1_000_000
 
@@ -115,6 +117,7 @@ class Trace:
     def model(
         self, model: str, response, ms: int, persona: str | None = None, depth: int = 0
     ) -> None:
+        """Record one model call's cost and shape as a `model` event."""
         used = response.usage
         self.input_tokens += used.input_tokens
         self.output_tokens += used.output_tokens
@@ -182,6 +185,7 @@ class Trace:
         self.events.append({"type": "consolidation", "ok": ok, "why": why, "ms": ms})
 
     def gate(self, retrieve: bool, why: str, hits: int) -> None:
+        """Record whether this turn retrieved facts, and why."""
         # A skip is a decision, not an absence — record it so the ratio is
         # visible and the reason is readable afterwards.
         self.events.append(
@@ -189,6 +193,7 @@ class Trace:
         )
 
     def skills(self, names: list[str]) -> None:
+        """Record which skills matched this turn, if any."""
         # Recorded only when something matched — an empty turn says nothing
         # extra, the same choice consolidation's silence-on-nothing-due makes.
         self.events.append({"type": "skills", "names": names})
@@ -217,6 +222,7 @@ class Trace:
     def tool(
         self, name: str, args: dict, ok: bool, output: str, ms: int, depth: int = 0
     ) -> None:
+        """Record one tool call's arguments, result size/preview, and outcome."""
         self.events.append(
             {
                 "type": "tool",
@@ -234,6 +240,7 @@ class Trace:
         )
 
     def finish(self, reply: str) -> int:
+        """Write this trace as one row in `traces` and return its id."""
         conn = connect()
         cur = conn.execute(
             "INSERT INTO traces (started_at, duration_ms, user_input, reply,"
@@ -261,6 +268,7 @@ class Trace:
 
 
 def print_recent(limit: int = 10) -> None:
+    """Print a table of the most recent traces."""
     conn = connect()
     rows = conn.execute(
         "SELECT id, started_at, duration_ms, model_calls, input_tokens,"
@@ -283,6 +291,7 @@ def print_recent(limit: int = 10) -> None:
 
 
 def print_one(trace_id: int) -> None:
+    """Print one trace's full step-by-step event log."""
     conn = connect()
     # Named columns rather than SELECT * and a positional unpack. The first
     # migration to add a column broke that unpack, which is a good argument

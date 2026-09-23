@@ -41,6 +41,9 @@ PERSONA = Persona(
 
 @dataclass(frozen=True)
 class Verdict:
+    """One judge call's result: pass/fail against `criterion`, plus the trace
+    row it was recorded in."""
+
     passed: bool
     criterion: str
     trace_id: int
@@ -48,6 +51,8 @@ class Verdict:
 
 @dataclass(frozen=True)
 class HealthScore:
+    """One persona's pass rate over a set of verdicts."""
+
     persona: str
     passed: int
     total: int

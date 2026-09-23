@@ -30,12 +30,16 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 
 @dataclass(frozen=True)
 class Skill:
+    """One skill: its name, its match description, and its full body text."""
+
     name: str
     description: str
     body: str
 
 
 def _parse(text: str, source: Path) -> Skill:
+    """Parse one SKILL.md's frontmatter and body into a Skill, raising
+    ValueError on anything malformed."""
     if not text.lstrip().startswith("---"):
         raise ValueError(f"{source}: no frontmatter — a SKILL.md starts with ---")
     _, frontmatter, body = text.lstrip().split("---", 2)
@@ -123,6 +127,7 @@ def _safe_name(name: str) -> str:
 
 
 def _render(skill: Skill) -> str:
+    """Serialize a Skill back to SKILL.md text (frontmatter + body)."""
     # yaml.safe_dump, not string interpolation: a description containing a
     # colon ("Use when: planning a week ahead") would otherwise corrupt the
     # frontmatter _parse has to read back.

@@ -67,6 +67,7 @@ def _due(conn) -> tuple[str, int] | None:
 
 
 def _fail(trace: Trace, thread: str, count: int, why: str, ms: int) -> None:
+    """Record a failed consolidation attempt and remember where it failed."""
     _failed_at[thread] = count
     trace.consolidation(False, why, ms)
 
@@ -99,6 +100,8 @@ def _parse(text: str) -> tuple[list[str], str] | None:
 
 
 def _run(client, trace: Trace) -> None:
+    """Consolidate one due thread: call the model, parse its reply, and write
+    the resulting facts/episode/flags in one transaction."""
     conn = connect()
     try:
         due = _due(conn)

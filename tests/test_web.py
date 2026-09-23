@@ -49,6 +49,19 @@ def test_fetch_url_refuses_private_loopback_and_link_local_addresses(url):
         web.fetch_url(url, _client(_html))
 
 
+def test_fetch_url_refuses_ipv4_mapped_ipv6_loopback_addresses(monkeypatch):
+    """Regression test: IPv4-mapped IPv6 addresses like ::ffff:127.0.0.1 must
+    be caught by the SSRF guard, even though they don't match the old
+    hand-rolled _PRIVATE_NETWORKS list."""
+    def mock_getaddrinfo(host, port):
+        # Simulate a hostname that resolves to IPv4-mapped IPv6 loopback
+        return [(2, 1, 6, "", ("::ffff:127.0.0.1", 0))]
+
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo)
+    with pytest.raises(ValueError, match="private|internal"):
+        web.fetch_url("https://internal-via-ipv6.example.com/", _client(_html))
+
+
 def test_fetch_url_reports_a_redirect_without_following_it():
     seen = []
 

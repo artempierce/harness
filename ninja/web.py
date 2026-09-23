@@ -18,19 +18,6 @@ MAX_FETCH = 20_000
 SEARCH_RESULTS = 5
 TIMEOUT = 10.0
 
-# The SSRF surface: a hostname that resolves to any of these is refused
-# before a request is made, regardless of what the URL's text looked like.
-# 169.254.0.0/16 covers the cloud metadata address (169.254.169.254), the
-# single most common real-world SSRF target.
-_PRIVATE_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-]
-
 
 def _guard(url: str) -> None:
     """Refuse a URL before any request is made: wrong scheme, or a host
@@ -46,7 +33,7 @@ def _guard(url: str) -> None:
         raise ValueError(f"could not resolve host: {parsed.hostname}") from e
     for addr in addrs:
         ip = ipaddress.ip_address(addr)
-        if any(ip in net for net in _PRIVATE_NETWORKS):
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
             raise ValueError(f"refusing a private/internal address: {addr}")
 
 

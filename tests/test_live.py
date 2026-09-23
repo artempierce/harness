@@ -38,8 +38,8 @@ def test_every_persona_names_a_model_that_exists():
     # including any the agent authors itself from layer 9.
     import anthropic
 
-    from ninja import personas
+    from ninja import judge, personas
 
     client = anthropic.Anthropic()
-    for persona in personas.all():
+    for persona in [*personas.all(), judge.PERSONA]:
         assert client.models.retrieve(persona.model).id, persona.name

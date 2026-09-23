@@ -1,6 +1,7 @@
 """The tool boundary. These are the security tests — they must not be relaxed
 to make a feature work."""
 
+import httpx
 import pytest
 
 from ninja import tools
@@ -182,3 +183,31 @@ def test_propose_skill_stages_a_draft(tmp_path, monkeypatch):
     assert "/approve-skill weekly-review" in result
     (staged,) = skills.load_all(skills.PENDING_DIR)
     assert staged.name == "weekly-review"
+
+
+def test_search_web_runs_through_the_dispatcher(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", "test-key")
+
+    def handler(request):
+        return httpx.Response(
+            200, json={"results": [{"title": "t", "url": "https://x.com", "content": "c"}]}
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    out = tools.run("search_web", {"query": "ninja"}, ALL, http=client)
+    assert "https://x.com" in out
+
+
+def test_fetch_url_runs_through_the_dispatcher():
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="<p>hi</p>")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    out = tools.run("fetch_url", {"url": "https://example.com"}, ALL, http=client)
+    assert "hi" in out
+
+
+def test_search_web_and_fetch_url_reject_non_string_args():
+    for name, args in [("search_web", {"query": 5}), ("fetch_url", {"url": 5})]:
+        with pytest.raises(ValueError, match="must be a string"):
+            tools.run(name, args, ALL)

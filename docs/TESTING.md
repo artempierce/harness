@@ -46,6 +46,7 @@ whether a test **can tell you something you did not already know**.
 | `tests/test_personas.py` | The loader as a parser of hostile input, and `schemas()` as enforcement point one | Real files in `tmp_path` |
 | `tests/test_skills.py` | The frontmatter parser as a parser of hostile input, the keyword matcher, rendering, and the propose/approve/reject staging flow | Real files in `tmp_path` |
 | `tests/test_semantic.py` | The gate's decisions and FTS5 query building | Real SQLite + FTS5 |
+| `tests/test_web.py` | `search_web`/`fetch_url`: the SSRF/scheme/redirect guards, delimiter wrapping and escaping, truncation, and dispatcher wiring | `httpx.MockTransport` |
 | `tests/test_episodic.py` | The recall window, and the rule that it cannot start on an assistant message | Real SQLite |
 | `tests/test_trace.py` | Pricing, totals, truncation, the unpriced flag, and `ninja trace <id>` rendering | — |
 | `tests/test_server.py` | Every endpoint, both outcomes: the panels, the 400s, the 502, and what a failure leaves behind | `TestClient` + `StubClient` |

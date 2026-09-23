@@ -1,5 +1,6 @@
 """The loop. These tests are why layer 2 can be trusted without spending money."""
 
+import httpx
 import pytest
 
 from ninja import agent, trace
@@ -67,6 +68,24 @@ def test_a_failing_tool_comes_back_as_an_error_not_a_crash():
     assert result["is_error"] is True
     assert "hidden files" in result["content"]
     assert turn.events[1]["ok"] is False
+
+
+def test_a_network_failure_in_a_tool_comes_back_as_an_error_not_a_crash(monkeypatch):
+    # search_web/fetch_url call out over the network; a timeout or a refused
+    # connection is the world's failure, not ours, and belongs back in the
+    # transcript the same way a bad path does.
+    def broken(name, args, allowed, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(agent.tools, "run", broken)
+    client = StubClient([tool_call("t1", "fetch_url", {"url": "https://example.com"}),
+                         text("couldn't reach it.")])
+    messages = [{"role": "user", "content": "fetch it"}]
+    assert agent.run_turn(client, messages, trace.Trace("x"), a_persona()) == "couldn't reach it."
+
+    result = messages[2]["content"][0]
+    assert result["is_error"] is True
+    assert "connection refused" in result["content"]
 
 
 def test_the_step_cap_stops_a_runaway_loop():

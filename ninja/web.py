@@ -18,10 +18,14 @@ MAX_FETCH = 20_000
 SEARCH_RESULTS = 5
 TIMEOUT = 10.0
 
+# Carrier-grade NAT (RFC 6598) — some cloud providers route internal service
+# traffic through it, and it is not covered by is_private/is_reserved.
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
 
 def _guard(url: str) -> None:
     """Refuse a URL before any request is made: wrong scheme, or a host
-    that resolves to a private/loopback/link-local address."""
+    that resolves to a private/loopback/link-local/multicast/CGNAT address."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
@@ -33,8 +37,25 @@ def _guard(url: str) -> None:
         raise ValueError(f"could not resolve host: {parsed.hostname}") from e
     for addr in addrs:
         ip = ipaddress.ip_address(addr)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip in _CGNAT
+        ):
             raise ValueError(f"refusing a private/internal address: {addr}")
+
+
+def _wrap(text: str, source: str) -> str:
+    """Wrap fetched text in the <fetched-content> delimiter. The text is
+    the least trustworthy this system will ever see, so any literal
+    occurrence of the delimiter's own closing tag is neutralized first —
+    otherwise fetched content could close the wrapper early and have the
+    rest of itself read back as trusted context instead of data."""
+    safe = text.replace("</fetched-content>", "&lt;/fetched-content&gt;")
+    return f'<fetched-content source="{source}">\n{safe}\n</fetched-content>'
 
 
 def fetch_url(url: str, http: httpx.Client) -> str:
@@ -58,7 +79,7 @@ def fetch_url(url: str, http: httpx.Client) -> str:
         return f"not a readable page (content-type: {content_type or 'unknown'})"
     if len(text) > MAX_FETCH:
         text = f"{text[:MAX_FETCH]}\n[truncated: {len(text) - MAX_FETCH} more characters]"
-    return f'<fetched-content source="{url}">\n{text}\n</fetched-content>'
+    return _wrap(text, url)
 
 
 def search_web(query: str, http: httpx.Client) -> str:
@@ -79,4 +100,4 @@ def search_web(query: str, http: httpx.Client) -> str:
         for r in results
     ]
     body = "\n".join(lines) if lines else "no results"
-    return f'<fetched-content source="tavily">\n{body}\n</fetched-content>'
+    return _wrap(body, "tavily")
